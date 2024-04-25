@@ -1,0 +1,8 @@
+{
+    "files.associations": {
+        "main.h": "c",
+        "shared.h": "c",
+        "window.h": "c",
+        "styles.h": "c"
+    }
+}

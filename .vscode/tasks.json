@@ -1,0 +1,40 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"type": "shell",
+			"label": "Setup",
+			"command": "/usr/bin/meson",
+			"args": [
+				"setup",
+				".build"
+			],
+			"options": {
+				"cwd": "${workspaceFolder}"
+			},
+			"problemMatcher": [
+				"$gcc"
+			],
+			"group": "build",
+			"detail": "Configure Project"
+		},
+		{
+			"type": "shell",
+			"label": "Build",
+			"command": "/usr/bin/ninja",
+			"args": [
+			],
+			"options": {
+				"cwd": ".build"
+			},
+			"problemMatcher": [
+				"$gcc"
+			],
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			},
+			"detail": "Build",
+		}
+	]
+}
