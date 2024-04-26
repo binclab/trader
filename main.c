@@ -18,19 +18,19 @@
 #include <webkit/webkit.h>
 
 static void create_window(GtkApplication* app, gpointer user_data){
+    //const char *uri = "https://trade.metatrader5.com/terminal";
+    const gchar *uri =  "https://mt5-real02-web-svg.deriv.com/terminal?login=101302275&server=DerivSVG-Server-02";
     GtkWidget *window = gtk_application_window_new(app);
     GtkWidget *webview = webkit_web_view_new();
-    const char *uri = "https://trade.metatrader5.com/terminal";
-    WebKitNetworkSession *session = webkit_web_view_get_network_session((WebKitWebView *)webview);
-    WebKitCookieManager *cookiejar = webkit_network_session_get_cookie_manager(session);
-    webkit_cookie_manager_set_persistent_storage(cookiejar, "storage", WEBKIT_COOKIE_PERSISTENT_STORAGE_SQLITE);
+    gtk_window_set_child((GtkWindow *)window, webview);
+    gtk_window_present((GtkWindow *)window);
     gtk_window_set_title((GtkWindow *)window, "MT5 Terminal");
     gtk_widget_set_size_request(window, 1024, 576);
     gtk_window_set_default_size((GtkWindow *)window, 1024, 576);
+    WebKitNetworkSession *session = webkit_web_view_get_network_session((WebKitWebView *)webview);
+    WebKitCookieManager *cookiejar = webkit_network_session_get_cookie_manager(session);
+    webkit_cookie_manager_set_persistent_storage(cookiejar, "storage", WEBKIT_COOKIE_PERSISTENT_STORAGE_SQLITE);
     webkit_web_view_load_uri((WebKitWebView *)webview, uri);
-    gtk_window_set_child((GtkWindow *)window, webview);
-    gtk_window_present((GtkWindow *)window);
-
 }
 
 int main(int response, char **name)
