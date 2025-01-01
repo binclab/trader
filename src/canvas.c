@@ -1,43 +1,42 @@
 #include "canvas.h"
 
 G_DEFINE_TYPE_WITH_CODE(CandleListModel, candle_list_model, G_TYPE_OBJECT,
-                        G_IMPLEMENT_INTERFACE(G_TYPE_LIST_MODEL, candle_list_model_interface_init))
+                        G_IMPLEMENT_INTERFACE(G_TYPE_LIST_MODEL, candle_list_model_iface_init))
 
-static void candle_list_model_class_init(CandleListModelClass *klass) {}
+G_DEFINE_TYPE(Candle, candle, G_TYPE_OBJECT)
 
-static void candle_list_model_init(CandleListModel *self)
-{
-    self->array = g_ptr_array_new_with_free_func(g_free);
+static void candle_class_init(CandleClass *klass) {
+    // Initialization code for your class
 }
 
-static guint candle_list_model_get_n_items(GListModel *list)
-{
-    CandleListModel *self = (CandleListModel *)list;
-    return self->array->len;
+static void candle_init(Candle *self) {
+    // Initialization code for your instances
 }
 
-static gpointer candle_list_model_get_item(GListModel *list, guint position)
-{
-    CandleListModel *self = (CandleListModel *)list;
-    return g_ptr_array_index(self->array, position);
+static guint candle_list_model_get_n_items(GListModel *list) {
+    CandleListModel *self = CANDLE_LIST_MODEL(list);
+    return self->candles->len;
 }
 
-static GType candle_list_model_get_item_type(GListModel *list)
-{
-    return G_TYPE_POINTER;
+static GObject *candle_list_model_get_item(GListModel *list, guint position) {
+    CandleListModel *self = CANDLE_LIST_MODEL(list);
+    if (position >= self->candles->len) {
+        return NULL;
+    }
+    return g_object_ref(self->candles->pdata[position]);
 }
 
-static void candle_list_model_interface_init(GListModelInterface *iface)
-{
+static void candle_list_model_iface_init(GListModelInterface *iface) {
     iface->get_n_items = candle_list_model_get_n_items;
     iface->get_item = candle_list_model_get_item;
-    iface->get_item_type = candle_list_model_get_item_type;
 }
 
-void candle_list_model_add_item(CandleListModel *model, Candle *candle)
-{
-    g_ptr_array_add(model->array, candle);
-    g_signal_emit_by_name(model, "items-changed", model->array->len - 1, 1);
+static void candle_list_model_class_init(CandleListModelClass *klass) {
+    // Initialization code for your class
+}
+
+static void candle_list_model_init(CandleListModel *self) {
+    self->candles = g_ptr_array_new_with_free_func(g_object_unref);
 }
 
 static gboolean render_canvas(GtkGLArea *glarea, GdkGLContext *context, CandlePrice *candle)

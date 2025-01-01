@@ -10,8 +10,8 @@
 #define THIN_LINE 0.075f
 #define THICK_LINE 0.4f
 
-#define CANDLE_TYPE_LIST_MODEL (candle_list_model_get_type())
-G_DECLARE_FINAL_TYPE(CandleListModel, candle_list_model, CANDLE, LIST_MODEL, GObject)
+#define TYPE_CANDLE (candle_get_type())
+G_DECLARE_FINAL_TYPE(Candle, candle, CANDLE, CANDLE, GObject)
 
 typedef struct
 {
@@ -57,26 +57,23 @@ typedef struct {
     GDateTime *epoch;
 } CandlePrice;
 
-typedef struct {
+struct _Candle {
+    GObject parent_instance;
     CandlePrice *price;
     CandleData *data;
     CandleTime *time;
-} Candle;
+};
 
-typedef struct {
+struct _CandleListModel {
     GObject parent_instance;
-    GPtrArray *array;
+    GPtrArray *candles;
     CandleData *data;
     CandleTime *time;
     char *home;
     char *timeframe;
     int count;
     Symbol *instrument;
-} CandleListModel;
-
-typedef struct {
-    GObjectClass parent_class;
-} CandleListModelClass;
+};
 
 void candle_list_model_add_item(CandleListModel *model, Candle *candle);
 
