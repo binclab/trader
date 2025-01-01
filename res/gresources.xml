@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gresources>
+  <gresource prefix="/com/binclab/terminal">
+    <file>icons/48x48/apps/jwlibrary.png</file>
+    <file>icons/96x96/nav-home.png</file>
+    <file>icons/96x96/nav-bible.png</file>
+    <file>icons/96x96/nav-hamburger.png</file>
+    <file>icons/96x96/nav-meetings.png</file>
+    <file>icons/96x96/nav-library.png</file>
+    <file>icons/256x256/apps/jwlibrary.png</file>
+    <file>css/style.css</file>
+    <file>gl/fragment.spv</file>
+    <file>gl/vertex.spv</file>
+    <file>gl/shader.frag</file>
+    <file>gl/shader.vert</file>
+  </gresource>
+</gresources>

@@ -1,0 +1,25 @@
+window#logo {
+    background: rgba(0, 0, 0, 0.5);
+}
+
+viewport#chartport {
+    border-top: 1px solid darkolivegreen;
+    border-left: 1px solid darkolivegreen;
+    border-right: 1px solid darkolivegreen;
+    background-color: cornsilk;
+}
+
+viewport#timeport {
+    border: 1px solid darkolivegreen;
+    background-color: cornsilk;
+}
+
+button#led {
+    border: 1px solid mediumvioletred;
+    background: red;
+}
+
+button#led:checked {
+    border: 1px solid green;
+    background: lime;
+}

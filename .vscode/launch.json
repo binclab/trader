@@ -5,10 +5,10 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Launch MT5 Terminal",
+            "name": "Launch Terminal",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/.build/mt5terminal",
+            "program": "${workspaceFolder}/.build/terminal",
             "args": [],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}/.build",
@@ -22,6 +22,28 @@
                     "ignoreFailures": true
                 }
             ]
+        },
+        {
+            "name": "Python: Debug C Libraries",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "/usr/bin/python3",
+            "args": [
+                "main.py"
+            ],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "setupCommands": [
+                {
+                    "text": "set breakpoint pending on",
+                    "description": "Allow breakpoints to be set before the shared library is loaded",
+                    "ignoreFailures": false
+                }
+            ],
+            "miDebuggerPath": "/usr/bin/gdb",
         }
     ]
 }

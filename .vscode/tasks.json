@@ -3,7 +3,7 @@
 	"tasks": [
 		{
 			"type": "shell",
-			"label": "Setup",
+			"label": "Configure",
 			"command": "/usr/bin/meson",
 			"args": [
 				"setup",
@@ -13,28 +13,39 @@
 				"cwd": "${workspaceFolder}"
 			},
 			"problemMatcher": [
-				"$gcc"
+				{
+					"base": "$gcc",
+					"fileLocation": [
+						"relative",
+						"${workspaceFolder}",
+					]
+				}
 			],
-			"group": "build",
-			"detail": "Configure Project"
+			"group": "none"
 		},
 		{
 			"type": "shell",
 			"label": "Build",
 			"command": "/usr/bin/ninja",
 			"args": [
+				"-C", ".build"
 			],
 			"options": {
-				"cwd": ".build"
+				"cwd": "${workspaceFolder}"
 			},
 			"problemMatcher": [
-				"$gcc"
+				{
+					"base": "$gcc",
+					"fileLocation": [
+						"relative",
+						"${workspaceFolder}/terminal",
+					]
+				}
 			],
 			"group": {
 				"kind": "build",
 				"isDefault": true
-			},
-			"detail": "Build",
-		}
-	]
+			}
+		},
+	],
 }
