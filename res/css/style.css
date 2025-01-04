@@ -1,3 +1,7 @@
+.marker {
+    background-color: black;   
+}
+
 window#logo {
     background: rgba(0, 0, 0, 0.5);
 }

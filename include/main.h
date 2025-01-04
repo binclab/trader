@@ -14,11 +14,11 @@ GdkSurface *surface;
 GtkStyleProvider *provider;
 GtkStyleContext *context;
 
-static GtkWidget *layout1, *layout2, *canvasbox, *layout4;
+static GtkWidget *layout1, *layout2, *canvasbox, *layout3, *layout4, *fixed;
 static GtkWidget *scaleinfo, *chart, *timechart, *header1, *infoarea;
-static GtkWidget *navigation, *scale, *terminfo, *termframe, *infobox;
+static GtkWidget *navigation, *terminfo, *termframe, *infobox, *scale;
 static GtkWidget *accountbook, *termbar, *termspace, *conled;
-static GtkWidget *scaleport, *scalescroll, *scalebox;
+static GtkWidget *scaleport, *scalescroll, *scalebox; //, *chartpane, *timepane;
 static GtkWidget *chartscroll, *timescroll, *chartport, *timeport;
 
 typedef struct

@@ -1,45 +1,96 @@
 #include "canvas.h"
 
-G_DEFINE_TYPE_WITH_CODE(CandleListModel, candle_list_model, G_TYPE_OBJECT,
-                        G_IMPLEMENT_INTERFACE(G_TYPE_LIST_MODEL, candle_list_model_iface_init))
+G_DEFINE_TYPE(Candle, candle_object, G_TYPE_OBJECT)
 
-G_DEFINE_TYPE(Candle, candle, G_TYPE_OBJECT)
+static void candle_object_class_init(CandleClass *klass) {}
 
-static void candle_class_init(CandleClass *klass) {
-    // Initialization code for your class
+static void candle_object_init(Candle *self)
+{
+    self->price = (CandlePrice *)malloc(sizeof(CandlePrice));
 }
 
-static void candle_init(Candle *self) {
-    // Initialization code for your instances
+static void candle_list_model_init(CandleListModel *self)
+{
+    self->candles = g_ptr_array_new_with_free_func(g_free);
+    self->data = malloc(sizeof(CandleData));
+    self->time = malloc(sizeof(CandleTime));
 }
 
-static guint candle_list_model_get_n_items(GListModel *list) {
-    CandleListModel *self = CANDLE_LIST_MODEL(list);
+static guint candle_list_model_get_n_items(GListModel *list)
+{
+    CandleListModel *self = (CandleListModel *)list;
     return self->candles->len;
 }
 
-static GObject *candle_list_model_get_item(GListModel *list, guint position) {
-    CandleListModel *self = CANDLE_LIST_MODEL(list);
-    if (position >= self->candles->len) {
-        return NULL;
+static gpointer candle_list_model_get_item(GListModel *list, guint position)
+{
+    CandleListModel *self = (CandleListModel *)list;
+    return g_ptr_array_index(self->candles, position);
+}
+
+static GType candle_list_model_get_item_type(GListModel *list) { return G_TYPE_POINTER; }
+
+static void candle_list_model_interface_init(GListModelInterface *interface)
+{
+    interface->get_n_items = candle_list_model_get_n_items;
+    interface->get_item = candle_list_model_get_item;
+    interface->get_item_type = candle_list_model_get_item_type;
+}
+
+#define CANDLE_INTERFACE G_IMPLEMENT_INTERFACE(G_TYPE_LIST_MODEL, candle_list_model_interface_init)
+
+G_DEFINE_TYPE_WITH_CODE(CandleListModel, candle_list_model, G_TYPE_OBJECT, CANDLE_INTERFACE)
+
+static void candle_list_model_dispose(GObject *object)
+{
+    CandleListModel *self = (CandleListModel *)object;
+
+    int count = g_list_model_get_n_items((GListModel *)object);
+    for (size_t index = 0; index < count; index++)
+    {
+        Candle *candle = g_list_model_get_item((GListModel *)object, index);
+        if (candle && candle->price)
+        {
+            free(candle->price);
+        }
     }
-    return g_object_ref(self->candles->pdata[position]);
+
+    g_ptr_array_unref(self->candles);
+    self->candles = NULL;
+
+    ((GObjectClass *)candle_list_model_parent_class)->dispose(object);
 }
 
-static void candle_list_model_iface_init(GListModelInterface *iface) {
-    iface->get_n_items = candle_list_model_get_n_items;
-    iface->get_item = candle_list_model_get_item;
+static void candle_list_model_finalize(GObject *object)
+{
+    CandleListModel *self = (CandleListModel *)object;
+
+    free(self->data);
+    free(self->time);
+
+    ((GObjectClass *)candle_list_model_parent_class)->finalize(object);
 }
 
-static void candle_list_model_class_init(CandleListModelClass *klass) {
-    // Initialization code for your class
+static void candle_list_model_class_init(CandleListModelClass *klass)
+{
+    GObjectClass *object_class = G_OBJECT_CLASS(klass);
+
+    object_class->dispose = candle_list_model_dispose;
+    object_class->finalize = candle_list_model_finalize;
 }
 
-static void candle_list_model_init(CandleListModel *self) {
-    self->candles = g_ptr_array_new_with_free_func(g_object_unref);
+void candle_list_model_add_item(CandleListModel *model, Candle *candle)
+{
+    g_ptr_array_add(model->candles, candle);
+    g_signal_emit_by_name(model, "items-changed", model->candles->len - 1, 1);
 }
 
-static gboolean render_canvas(GtkGLArea *glarea, GdkGLContext *context, CandlePrice *candle)
+Candle *create_candle(Candle *candle)
+{
+    return g_object_new(CANDLE_TYPE_OBJECT, NULL);
+}
+
+static gboolean render_canvas(GtkGLArea *glarea, GdkGLContext *context, Candle *candle)
 {
     gtk_gl_area_make_current(glarea);
     if (gtk_gl_area_get_error(glarea) != NULL)
@@ -294,4 +345,21 @@ GtkWidget *create_canvas(Candle *candle)
     g_signal_connect(glarea, "realize", (GCallback)realize_canvas, candle->data);
     g_signal_connect(glarea, "render", (GCallback)render_canvas, candle);
     return glarea;
+}
+
+GtkWidget *create_scale(double price)
+{
+    int maxlength = 10;
+    char buffer[maxlength];
+    snprintf(buffer, maxlength, "%.3f", price);
+    GtkWidget *scale = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 2);
+    GtkWidget *marker = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+    GtkWidget *label = gtk_label_new(buffer);
+    gtk_widget_set_size_request(scale, 92, 36);
+    gtk_widget_set_size_request(marker, 4, 2);
+    gtk_widget_add_css_class(marker, "marker");
+    gtk_widget_set_valign(marker, GTK_ALIGN_CENTER);
+    gtk_box_append((GtkBox*)scale, marker);
+    gtk_box_append((GtkBox*)scale, label);
+    return scale;
 }

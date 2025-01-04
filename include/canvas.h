@@ -6,12 +6,15 @@
 
 #define CANDLE_SIZE 50
 #define CONTENT_HEIGHT 300
-#define CONTENT_WIDTH 308
+#define CONTENT_WIDTH 302
 #define THIN_LINE 0.075f
 #define THICK_LINE 0.4f
 
-#define TYPE_CANDLE (candle_get_type())
-G_DECLARE_FINAL_TYPE(Candle, candle, CANDLE, CANDLE, GObject)
+#define CANDLE_TYPE_OBJECT (candle_object_get_type())
+G_DECLARE_FINAL_TYPE(Candle, candle_object, CANDLE, OBJECT, GObject)
+
+#define CANDLE_TYPE_LIST_MODEL (candle_list_model_get_type())
+G_DECLARE_FINAL_TYPE(CandleListModel, candle_list_model, CANDLE, LIST_MODEL, GObject)
 
 typedef struct
 {
@@ -30,12 +33,14 @@ typedef enum
     CANDLES
 } TickType;
 
-typedef struct {
+typedef struct
+{
     guint minutes;
     guint hours;
 } CandleTime;
 
-typedef struct {
+typedef struct
+{
     GtkBox *box;
     GLuint program;
     GLuint buffer;
@@ -49,7 +54,8 @@ typedef struct {
     double space;
 } CandleData;
 
-typedef struct {
+typedef struct
+{
     double high;
     double low;
     double open;
@@ -57,14 +63,16 @@ typedef struct {
     GDateTime *epoch;
 } CandlePrice;
 
-struct _Candle {
+typedef struct _Candle
+{
     GObject parent_instance;
     CandlePrice *price;
     CandleData *data;
     CandleTime *time;
-};
+} Candle;
 
-struct _CandleListModel {
+typedef struct _CandleListModel
+{
     GObject parent_instance;
     GPtrArray *candles;
     CandleData *data;
@@ -73,10 +81,27 @@ struct _CandleListModel {
     char *timeframe;
     int count;
     Symbol *instrument;
-};
+} CandleListModel;
+
+typedef struct
+{
+    char *home;
+    GdkRectangle *rectangle;
+    GListStore *store;
+    Symbol *instrument;
+
+    SoupWebsocketConnection *connection;
+
+    GtkToggleButton *led;
+    GtkWidget *widget;
+
+    CandleData *data;
+    CandlePrice *price;
+    CandleTime *time;
+} DataObject;
 
 void candle_list_model_add_item(CandleListModel *model, Candle *candle);
-
 GtkWidget *create_canvas(Candle *candle);
+GtkWidget *create_scale(double price);
 
 #endif // CANVAS_H_INCLUDED

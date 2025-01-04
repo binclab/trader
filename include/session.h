@@ -4,17 +4,11 @@
 #include "window.h"
 #include "database.h"
 
-void create_chart(BincWindow *window, guint last);
+void create_chart(BincWindow *window);
 
 void update_candle(BincWindow *window, JsonObject *object);
 
-void on_message(SoupWebsocketConnection *connection, SoupWebsocketDataType type, GBytes *message, BincWindow *window);
-
-void on_closed(SoupWebsocketConnection *connection, BincWindow *window);
-
-void on_websocket_connected(SoupSession *session, GAsyncResult *result, BincWindow *window);
-
-void *setup_soup_session(void *data);
+void *setup_soup_session(void *argument);
 
 void resume_candle(BincWindow *window);
 

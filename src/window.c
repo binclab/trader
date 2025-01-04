@@ -9,9 +9,6 @@ static void binc_window_size_allocate(GtkWidget *window, int width, int height, 
     {
         ((BincWindow *)window)->width = width - CONTENT_WIDTH;
         ((BincWindow *)window)->height = height - CONTENT_HEIGHT;
-        gtk_window_set_default_size((GtkWindow *)window, width, height);
-        gtk_window_set_resizable((GtkWindow *)window, FALSE);
-        gtk_window_set_focus_visible((GtkWindow *)window, TRUE);
         ((BincWindow *)window)->set = FALSE;
     }
 }
@@ -37,12 +34,15 @@ static void binc_window_init(BincWindow *self)
     self->set = TRUE;
     self->print = FALSE;
     self->bytes_recieved = 0;
-    self->model = g_object_new(candle_list_model_get_type(), NULL);
-    self->model->data = malloc(sizeof(CandleData));
-    self->model->time = malloc(sizeof(CandleTime));
+    self->width = 1280;
+    self->height = 720;
+    self->model = g_object_new(CANDLE_TYPE_LIST_MODEL, NULL);
     self->model->time->hours = g_date_time_get_hour(timelocal) - g_date_time_get_hour(timeutc);
     self->model->time->minutes = g_date_time_get_minute(timelocal) - g_date_time_get_minute(timeutc);
-    g_idle_add_once((GSourceOnceFunc)gtk_window_maximize, window);
+
+    gtk_window_set_default_size((GtkWindow *)self, 1280, 720);
+    //gtk_window_set_resizable((GtkWindow *)self, FALSE);
+    //gtk_window_set_focus_visible((GtkWindow *)self, TRUE);
 }
 
 GtkWidget *binc_window_new(GtkApplication *app)

@@ -14,7 +14,6 @@ typedef struct
     int width;
     int height;
     GtkWidget *widget;
-    GtkBox *box;
     CandleListModel *model;
     CandlePrice *price;
     char *timeframe;
@@ -22,12 +21,12 @@ typedef struct
     GtkViewport *timeport;
     GtkToggleButton *led;
     GtkRange *scale;
+    GtkBox *scalebox;
     GtkBox *chart;
     gsize bytes_recieved;
     GtkLabel *infolabel;
     SoupWebsocketConnection *connection;
     gchar *home;
-    pthread_t thread;
 } BincWindow;
 
 typedef struct

@@ -41,5 +41,6 @@
     "C_Cpp.default.includePath": [
         "include"
     ],
-    "C_Cpp.default.intelliSenseMode": "linux-gcc-x64"
+    "C_Cpp.default.intelliSenseMode": "linux-gcc-x64",
+    "mesonbuild.configureOnOpen": false
 }
