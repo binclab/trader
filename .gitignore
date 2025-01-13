@@ -1,52 +1,44 @@
-# Prerequisites
-*.d
+# Ignore build directories
+/build/
+/_build/
+/_builddir/
+/_build_dir/
+.build
 
-# Object files
+# Ignore Meson logs and files
+/meson-logs/
+/meson-private/
+/meson.buildroot/
+/meson-info/
+
+# Ignore compiled object files
 *.o
-*.ko
-*.obj
-*.elf
-
-# Linker output
-*.ilk
-*.map
-*.exp
-
-# Precompiled Headers
-*.gch
-*.pch
-
-# Libraries
-*.lib
 *.a
-*.la
-*.lo
-
-# Shared objects (inc. Windows DLLs)
-*.dll
 *.so
-*.so.*
 *.dylib
-
-# Executables
+*.dll
 *.exe
+
+# Ignore compiled binary files
 *.out
 *.app
-*.i*86
-*.x86_64
-*.hex
 
-# Debug files
-*.dSYM/
-*.su
-*.idb
-*.pdb
+# Ignore other temporary files
+*.tmp
+*.log
+*.swp
+problems.txt
 
-# Kernel Module Compile Results
-*.mod*
-*.cmd
-.tmp_versions/
-modules.order
-Module.symvers
-Mkfile.old
-dkms.conf
+# Ignore dependency directories (optional)
+*.dep
+*.obj
+
+# Ignore Python compiled files
+__pycache__/
+*.py[cod]
+
+# Ignore macOS-specific files
+.DS_Store
+
+# Ignore Windows-specific files
+Thumbs.db

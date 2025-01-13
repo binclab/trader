@@ -1,250 +1,80 @@
-#include "canvas.h"
+#include "symbols.h"
 
-G_DEFINE_TYPE(Candle, candle_object, G_TYPE_OBJECT)
-
-static void candle_object_class_init(CandleClass *klass) {}
-
-static void candle_object_init(Candle *self)
+static void bind_vertices(GtkWidget *widget, BincCandle *candle)
 {
-    self->price = (CandlePrice *)malloc(sizeof(CandlePrice));
-}
+    GLfloat scale = CANDLE_HEIGHT / candle->stat->scale;
+    gboolean bearish = candle->price->open > candle->price->close;
+    GLfloat red = bearish ? 1.0f : 0.0f;
+    GLfloat green = bearish ? 0.0f : 1.0f;
 
-static void candle_list_model_init(CandleListModel *self)
-{
-    self->candles = g_ptr_array_new_with_free_func(g_free);
-    self->data = malloc(sizeof(CandleData));
-    self->time = malloc(sizeof(CandleTime));
-}
+    /*float high = candle->data->scale * (candle->price->high - candle->data->baseline);
+    float open = candle->data->scale * (candle->price->open - candle->data->baseline);
+    float close = candle->data->scale * (candle->price->close - candle->data->baseline);
+    float low = candle->data->scale * (candle->price->low - candle->data->baseline);*/
 
-static guint candle_list_model_get_n_items(GListModel *list)
-{
-    CandleListModel *self = (CandleListModel *)list;
-    return self->candles->len;
-}
-
-static gpointer candle_list_model_get_item(GListModel *list, guint position)
-{
-    CandleListModel *self = (CandleListModel *)list;
-    return g_ptr_array_index(self->candles, position);
-}
-
-static GType candle_list_model_get_item_type(GListModel *list) { return G_TYPE_POINTER; }
-
-static void candle_list_model_interface_init(GListModelInterface *interface)
-{
-    interface->get_n_items = candle_list_model_get_n_items;
-    interface->get_item = candle_list_model_get_item;
-    interface->get_item_type = candle_list_model_get_item_type;
-}
-
-#define CANDLE_INTERFACE G_IMPLEMENT_INTERFACE(G_TYPE_LIST_MODEL, candle_list_model_interface_init)
-
-G_DEFINE_TYPE_WITH_CODE(CandleListModel, candle_list_model, G_TYPE_OBJECT, CANDLE_INTERFACE)
-
-static void candle_list_model_dispose(GObject *object)
-{
-    CandleListModel *self = (CandleListModel *)object;
-
-    int count = g_list_model_get_n_items((GListModel *)object);
-    for (size_t index = 0; index < count; index++)
+    GLfloat high = scale * (candle->price->high - candle->stat->baseline);
+    GLfloat low = scale * (candle->price->low - candle->stat->baseline);
+    gdouble maximum = fmax(fabs(high), fabs(low));
+    gint factor = 1;
+    if (maximum > 1.0f)
     {
-        Candle *candle = g_list_model_get_item((GListModel *)object, index);
-        if (candle && candle->price)
-        {
-            free(candle->price);
-        }
+        factor = 2;
+        scale = CANDLE_HEIGHT / (candle->stat->scale * factor);
     }
+    else if (maximum > 2.0f)
+    {
+        factor = 3;
+        scale = CANDLE_HEIGHT / (candle->stat->scale * factor);
+    }
+    high = scale * (candle->price->high - candle->stat->baseline);
+    low = scale * (candle->price->low - candle->stat->baseline);
+    GLfloat open = scale * (candle->price->open - candle->stat->baseline);
+    GLfloat close = scale * (candle->price->close - candle->stat->baseline);
+    gtk_widget_set_size_request(widget, CANDLE_WIDTH, CANDLE_HEIGHT * factor);
+    //gtk_widget_set_size_request(gtk_widget_get_parent(widget), CANDLE_WIDTH, CANDLE_HEIGHT * factor);
 
-    g_ptr_array_unref(self->candles);
-    self->candles = NULL;
+    GLfloat vertices[126] = {
+        // Triangle BincLine 1
+        -THIN_LINE, open, 0.0f, 0.0f, 1.0f, 0.0f, 1.0f,
+        THIN_LINE, high, 0.0f, 0.0f, 1.0f, 0.0f, 1.0f,
+        -THIN_LINE, high, 0.0f, 0.0f, 1.0f, 0.0f, 1.0f,
+        THIN_LINE, high, 0.0f, 0.0f, 1.0f, 0.0f, 1.0f,
+        -THIN_LINE, open, 0.0f, 0.0f, 1.0f, 0.0f, 1.0f,
+        THIN_LINE, open, 0.0f, 0.0f, 1.0f, 0.0f, 1.0f,
 
-    ((GObjectClass *)candle_list_model_parent_class)->dispose(object);
+        // Triangle BincLine 2
+        -THIN_LINE, open, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f,
+        THIN_LINE, open, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f,
+        -THIN_LINE, low, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f,
+        THIN_LINE, low, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f,
+        -THIN_LINE, low, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f,
+        THIN_LINE, open, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f,
+        // Triangle BincLine 3
+        -THICK_LINE, open, 0.0f, red, green, 0.0f, 1.0f,
+        THICK_LINE, close, 0.0f, red, green, 0.0f, 1.0f,
+        -THICK_LINE, close, 0.0f, red, green, 0.0f, 1.0f,
+        THICK_LINE, close, 0.0f, red, green, 0.0f, 1.0f,
+        -THICK_LINE, open, 0.0f, red, green, 0.0f, 1.0f,
+        THICK_LINE, open, 0.0f, red, green, 0.0f, 1.0f};
+    glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
 }
 
-static void candle_list_model_finalize(GObject *object)
-{
-    CandleListModel *self = (CandleListModel *)object;
-
-    free(self->data);
-    free(self->time);
-
-    ((GObjectClass *)candle_list_model_parent_class)->finalize(object);
-}
-
-static void candle_list_model_class_init(CandleListModelClass *klass)
-{
-    GObjectClass *object_class = G_OBJECT_CLASS(klass);
-
-    object_class->dispose = candle_list_model_dispose;
-    object_class->finalize = candle_list_model_finalize;
-}
-
-void candle_list_model_add_item(CandleListModel *model, Candle *candle)
-{
-    g_ptr_array_add(model->candles, candle);
-    g_signal_emit_by_name(model, "items-changed", model->candles->len - 1, 1);
-}
-
-Candle *create_candle(Candle *candle)
-{
-    return g_object_new(CANDLE_TYPE_OBJECT, NULL);
-}
-
-static gboolean render_canvas(GtkGLArea *glarea, GdkGLContext *context, Candle *candle)
-{
-    gtk_gl_area_make_current(glarea);
-    if (gtk_gl_area_get_error(glarea) != NULL)
+static gboolean render_canvas(GtkGLArea *area, GdkGLContext *context, gpointer user_data)
+{ // Draw A Candle of Height
+    gtk_gl_area_make_current(area);
+    if (gtk_gl_area_get_error(area) != NULL)
     {
         g_warning("Failed to make GL context current");
         return FALSE;
     }
 
-    // Determine the color based on bearish or bullish condition
-    gboolean bearish = candle->price->open > candle->price->close;
-    float red = bearish ? 1.0f : 0.0f;
-    float green = bearish ? 0.0f : 1.0f;
-    float high = candle->data->scale * (candle->price->high - candle->data->baseline);
-    float open = candle->data->scale * (candle->price->open - candle->data->baseline);
-    float close = candle->data->scale * (candle->price->close - candle->data->baseline);
-    float low = candle->data->scale * (candle->price->low - candle->data->baseline);
-    // Define vertices for the triangles
-    GLfloat vertices[] = {
-        // Triangle Line 1
-        -THIN_LINE,
-        open,
-        0.0f,
-        0.0f,
-        1.0f,
-        0.0f,
-        1.0f,
-        THIN_LINE,
-        high,
-        0.0f,
-        0.0f,
-        1.0f,
-        0.0f,
-        1.0f,
-        -THIN_LINE,
-        high,
-        0.0f,
-        0.0f,
-        1.0f,
-        0.0f,
-        1.0f,
-        THIN_LINE,
-        high,
-        0.0f,
-        0.0f,
-        1.0f,
-        0.0f,
-        1.0f,
-        -THIN_LINE,
-        open,
-        0.0f,
-        0.0f,
-        1.0f,
-        0.0f,
-        1.0f,
-        THIN_LINE,
-        open,
-        0.0f,
-        0.0f,
-        1.0f,
-        0.0f,
-        1.0f,
+    BincCandle *candle = BINC_CANDLE(user_data);
+    guint *buffer = (guint *)g_object_get_data(G_OBJECT(area), "buffer");
 
-        // Triangle Line 2
-        -THIN_LINE,
-        open,
-        0.0f,
-        1.0f,
-        0.0f,
-        0.0f,
-        1.0f,
-        THIN_LINE,
-        open,
-        0.0f,
-        1.0f,
-        0.0f,
-        0.0f,
-        1.0f,
-        -THIN_LINE,
-        low,
-        0.0f,
-        1.0f,
-        0.0f,
-        0.0f,
-        1.0f,
-        THIN_LINE,
-        low,
-        0.0f,
-        1.0f,
-        0.0f,
-        0.0f,
-        1.0f,
-        -THIN_LINE,
-        low,
-        0.0f,
-        1.0f,
-        0.0f,
-        0.0f,
-        1.0f,
-        THIN_LINE,
-        open,
-        0.0f,
-        1.0f,
-        0.0f,
-        0.0f,
-        1.0f,
-
-        // Triangle Line 3
-        -THICK_LINE,
-        open,
-        0.0f,
-        red,
-        green,
-        0.0f,
-        1.0f,
-        THICK_LINE,
-        close,
-        0.0f,
-        red,
-        green,
-        0.0f,
-        1.0f,
-        -THICK_LINE,
-        close,
-        0.0f,
-        red,
-        green,
-        0.0f,
-        1.0f,
-        THICK_LINE,
-        close,
-        0.0f,
-        red,
-        green,
-        0.0f,
-        1.0f,
-        -THICK_LINE,
-        open,
-        0.0f,
-        red,
-        green,
-        0.0f,
-        1.0f,
-        THICK_LINE,
-        open,
-        0.0f,
-        red,
-        green,
-        0.0f,
-        1.0f,
-    };
-
+    // glClearColor(0.0, 0.0, 0.0, 0.0);
     glClear(GL_COLOR_BUFFER_BIT);
-    glBindBuffer(GL_ARRAY_BUFFER, candle->data->buffer);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
+    glBindBuffer(GL_ARRAY_BUFFER, *buffer);
+    bind_vertices(GTK_WIDGET(area), candle);
     glUseProgram(candle->data->program);
 
     GLint pos_attr = glGetAttribLocation(candle->data->program, "position");
@@ -255,61 +85,40 @@ static gboolean render_canvas(GtkGLArea *glarea, GdkGLContext *context, Candle *
     glEnableVertexAttribArray(col_attr);
 
     glDrawArrays(GL_TRIANGLES, 0, 18);
+    glBindVertexArray(0);
     return TRUE;
 }
 
-static void realize_canvas(GtkGLArea *glarea, CandleData *data)
+static void realize_canvas(GtkGLArea *area, CandleData *data)
 {
-    gtk_gl_area_make_current(glarea);
-    if (gtk_gl_area_get_error(glarea) != NULL)
+    gtk_gl_area_make_current(area);
+    if (gtk_gl_area_get_error(area) != NULL)
     {
         g_warning("Failed to make GL context current");
+        return;
     }
-    else if (!data->vertex || !data->fragment)
-    {
-        g_warning("Failed to compile shaders");
-    }
-    else
-    {
-        data->program = glCreateProgram();
-        glAttachShader(data->program, data->vertex);
-        glAttachShader(data->program, data->fragment);
-        glLinkProgram(data->program);
-        glDeleteShader(data->vertex);
-        glDeleteShader(data->fragment);
 
-        GLint status;
-        glGetProgramiv(data->program, GL_LINK_STATUS, &status);
-        if (status != GL_TRUE)
-        {
-            GLint len = 0;
-            glGetProgramiv(data->program, GL_INFO_LOG_LENGTH, &len);
-            char *buffer = (char *)malloc(len);
-            glGetProgramInfoLog(data->program, len, NULL, buffer);
-            fprintf(stderr, "Program linking failed: %s\n", buffer);
-            free(buffer);
-            exit(1);
-        }
+    /*GLuint vao = 0;
+    glGenVertexArrays(1, &vao);
+    glBindVertexArray(vao);*/
 
-        GLuint vao = 0;
-        glGenVertexArrays(1, &vao);
-        glBindVertexArray(vao);
-
-        // Create and bind the Vertex Buffer Object
-        glGenBuffers(1, &data->buffer);
-    }
+    CandleBuffer *buffer = g_new0(CandleBuffer, 1);
+    buffer->vbo = 0;
+    g_object_set_data(G_OBJECT(area), "buffer", buffer);
+    glGenBuffers(1, &buffer->vbo);
 }
 
-static void unrealize_canvas(GtkGLArea *area, CandleData *data)
+static void unrealize_canvas(GtkGLArea *area, BincCandle *candle)
 {
     if (gtk_gl_area_get_error(area) == NULL)
     {
-        glDeleteVertexArrays(1, &data->buffer);
-        glDeleteProgram(data->program);
+        CandleBuffer *buffer = g_object_get_data(G_OBJECT(area), "buffer");
+        glDeleteVertexArrays(1, &buffer->vbo);
+        g_free(buffer);
+        g_date_time_unref(candle->price->epoch);
+        free(candle->price);
+        g_object_unref(candle);
     }
-
-    if (data)
-        free(data);
 }
 
 static GdkGLContext *create_context(GtkGLArea *area, GError *error)
@@ -324,42 +133,53 @@ static GdkGLContext *create_context(GtkGLArea *area, GError *error)
     return context;
 }
 
-GtkWidget *create_canvas(Candle *candle)
+GtkFixed *add_candle(BincData *bincdata, BincCandle *candle)
 {
     gint hours = g_date_time_get_hour(candle->price->epoch) + candle->time->hours;
     gint minutes = g_date_time_get_minute(candle->price->epoch) + candle->time->minutes;
-    gchar *name = g_strdup_printf("%02i:%02i", hours, minutes);
-    GtkWidget *glarea = gtk_gl_area_new();
+    gboolean even = minutes % 5 == 0;
+    gchar *name = even ? g_strdup_printf("%02i:%02i", hours, minutes) : NULL;
+    GtkWidget *fixed = gtk_fixed_new();
+    GtkWidget *line = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
     GtkWidget *label = gtk_label_new(name);
-
+    bincdata->widget = gtk_gl_area_new();
     g_free(name);
-    gtk_gl_area_set_has_stencil_buffer((GtkGLArea *)glarea, TRUE);
-    gtk_widget_set_size_request(glarea, CANDLE_SIZE, -1);
-    gtk_widget_set_size_request(label, CANDLE_SIZE, 48);
-    gtk_widget_set_name(glarea, "candle");
-    gtk_widget_set_name(label, "time");
-    gtk_label_set_justify(GTK_LABEL(label), GTK_JUSTIFY_CENTER);
-    gtk_box_append(candle->data->box, label);
-    g_signal_connect(glarea, "create-context", (GCallback)create_context, NULL);
-    g_signal_connect(glarea, "unrealize", (GCallback)unrealize_canvas, candle->data);
-    g_signal_connect(glarea, "realize", (GCallback)realize_canvas, candle->data);
-    g_signal_connect(glarea, "render", (GCallback)render_canvas, candle);
-    return glarea;
-}
 
-GtkWidget *create_scale(double price)
-{
-    int maxlength = 10;
-    char buffer[maxlength];
-    snprintf(buffer, maxlength, "%.3f", price);
-    GtkWidget *scale = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 2);
-    GtkWidget *marker = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
-    GtkWidget *label = gtk_label_new(buffer);
-    gtk_widget_set_size_request(scale, 92, 36);
-    gtk_widget_set_size_request(marker, 4, 2);
-    gtk_widget_add_css_class(marker, "marker");
-    gtk_widget_set_valign(marker, GTK_ALIGN_CENTER);
-    gtk_box_append((GtkBox*)scale, marker);
-    gtk_box_append((GtkBox*)scale, label);
-    return scale;
+    gtk_fixed_put((GtkFixed *)fixed, line, 1.7, 0);
+    gtk_gl_area_set_has_stencil_buffer((GtkGLArea *)bincdata->widget, TRUE);
+    gtk_widget_set_vexpand(fixed, TRUE);
+    gtk_widget_set_vexpand(line, TRUE);
+    gtk_widget_set_halign(line, GTK_ALIGN_CENTER);
+    gtk_widget_set_valign(fixed, GTK_ALIGN_CENTER);
+    // gtk_widget_set_halign(line, TRUE);
+    gtk_widget_set_hexpand(line, FALSE);
+    gtk_widget_set_size_request(fixed, CANDLE_WIDTH, CANDLE_HEIGHT);
+    gtk_widget_set_size_request(bincdata->widget, CANDLE_WIDTH, CANDLE_HEIGHT);
+    gtk_widget_set_size_request(label, CANDLE_WIDTH * 5, 48);
+    // gtk_widget_set_margin_start(label, 3);
+    gtk_widget_set_margin_start(label, 3);
+    gtk_widget_set_size_request(line, CANDLE_WIDTH / 2, CANDLE_HEIGHT);
+    // gtk_widget_remove_css_class(glarea, "background");
+    gtk_widget_set_valign(bincdata->widget, GTK_ALIGN_CENTER);
+    gtk_widget_set_name(bincdata->widget, "candle");
+    gtk_widget_set_name(label, "time");
+    gtk_widget_set_name(line, "graduation");
+    gtk_label_set_justify(GTK_LABEL(label), GTK_JUSTIFY_LEFT);
+    if (even)
+        gtk_box_append(bincdata->data->box, label);
+
+    // double value = CANDLE_HEIGHT * 2 / candle->data->range;
+    // gdouble ordinate = (candle->data->baseline - candle->price->open) * value;
+    // gtk_fixed_put(bincdata->data->overlay, fixed, bincdata->data->abscissa, ordinate);
+    // bincdata->data->abscissa += CANDLE_WIDTH;
+    gtk_box_append(bincdata->data->chart, fixed);
+    //  gtk_widget_realize(bincdata->widget);
+    g_signal_connect(bincdata->widget, "create-context", (GCallback)create_context, NULL);
+    g_signal_connect(bincdata->widget, "unrealize", (GCallback)unrealize_canvas, candle);
+    g_signal_connect(bincdata->widget, "realize", (GCallback)realize_canvas, candle->data);
+    g_signal_connect(bincdata->widget, "render", (GCallback)render_canvas, candle);
+
+    double distance = 720 * (candle->stat->highest - candle->price->open) / candle->stat->range;
+    gtk_fixed_put((GtkFixed *)fixed, bincdata->widget, 0, 0);
+    return (GtkFixed *)fixed;
 }

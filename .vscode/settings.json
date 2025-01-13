@@ -31,7 +31,7 @@
         "database.h": "c",
         "string.h": "c"
     },
-    "C_Cpp.default.compileCommands": "/home/binclab/terminal/.build/compile_commands.json",
+    "C_Cpp.default.compileCommands": "/home/binclab/trader/.build/compile_commands.json",
     "C_Cpp.default.configurationProvider": "mesonbuild.mesonbuild",
     "C_Cpp.default.browse.path": [
         "include"

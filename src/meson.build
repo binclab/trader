@@ -2,6 +2,7 @@ sources = files(
     'session.c',
     'canvas.c',
     'database.c',
-    'window.c',
+    'cartesian.c',
+    'symbols.c',
     'main.c',
 )

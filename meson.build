@@ -1,23 +1,24 @@
-project('Binc Terminal', 'c', version: '0.0.1')
+project('Binc Trader', 'c', version: '0.0.1')
 
 webkitdep = dependency('webkitgtk-6.0')
-gstreamerdep = dependency('gstreamer-1.0')
-epoxydep = dependency('epoxy')
+gldep = dependency('gl')
+glesdep = dependency('glesv2')
 sqlitedep = dependency('sqlite3')
 libjsondep = dependency('json-glib-1.0')
 soupdep = dependency('libsoup-3.0')
+soupdep = dependency('libsecret-1')
 
 subdir('src')
 subdir('res')
 
 executable(
-    'terminal',
+    'binctrader',
     sources,
     resources,
     dependencies: [
         webkitdep,
-        gstreamerdep,
-        epoxydep,
+        gldep,
+        glesdep,
         sqlitedep,
         libjsondep,
         soupdep,

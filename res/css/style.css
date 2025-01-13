@@ -1,7 +1,3 @@
-.marker {
-    background-color: black;   
-}
-
 window#logo {
     background: rgba(0, 0, 0, 0.5);
 }
@@ -26,4 +22,22 @@ button#led {
 button#led:checked {
     border: 1px solid green;
     background: lime;
+}
+
+label#time {
+    font-size: 14px;
+}
+
+widget#candle {}
+
+box#graduation {
+    border-right: 0.1px solid midnightblue;
+}
+
+.transparent {
+    background: rgba(0, 0, 0, 0.5);
+}
+
+box#marker {
+    background-color: black;
 }

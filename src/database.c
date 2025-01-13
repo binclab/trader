@@ -1,31 +1,21 @@
 #include "database.h"
 
-int restore_candles(CandleListModel *model)
+int restore_candles(BincData *bincdata)
 {
-    int length = strlen(model->home) + strlen(model->instrument->symbol) + 15;
+    int length = strlen(bincdata->home) + strlen(bincdata->instrument->symbol) + 13;
     char path[length];
-    snprintf(path, length, "%sdatabases/%s.db", model->home, model->instrument->symbol);
+    snprintf(path, length, "%shistory/%s.db", bincdata->home, bincdata->instrument->symbol);
     sqlite3 *database;
     int rc = sqlite3_open(path, &database);
-    if (rc != SQLITE_OK)
-    {
-        fprintf(stderr, "Cannot open database: %s\n", sqlite3_errmsg(database));
-        return model->count;
-    }
-    size_t maxlength = 50 + strlen(model->timeframe);
+    size_t maxlength = 50 + strlen(bincdata->timeframe);
     char *sql_get_size = (char *)malloc(maxlength);
-    snprintf(sql_get_size, maxlength, "SELECT epoch FROM \"%s\" ORDER BY epoch DESC LIMIT 1;", model->timeframe);
+    snprintf(sql_get_size, maxlength, "SELECT epoch FROM \"%s\" ORDER BY epoch DESC LIMIT 1;", bincdata->timeframe);
     sqlite3_stmt *stmt;
     rc = sqlite3_prepare_v2(database, sql_get_size, -1, &stmt, NULL);
-    if (rc != SQLITE_OK)
-    {
-        fprintf(stderr, "Failed to prepare statement: %s\n", sqlite3_errmsg(database));
-        return model->count;
-    }
     rc = sqlite3_step(stmt);
     if (rc != SQLITE_ROW)
     {
-        return model->count;
+        return bincdata->count;
     }
 
     GDateTime *candletime = g_date_time_new_from_unix_utc(sqlite3_column_int64(stmt, 0));
@@ -34,88 +24,62 @@ int restore_candles(CandleListModel *model)
     GTimeSpan span = g_date_time_difference(candletime, g_date_time_new_now_utc());
     g_date_time_unref(candletime);
     guint count = (int)(span / G_TIME_SPAN_MINUTE);
-    if (count > model->count)
-        return model->count;
+    if (count > bincdata->count)
+        return bincdata->count;
     else
     {
-        size_t maxlength = 53 + strlen(model->timeframe);
+        size_t maxlength = 53 + strlen(bincdata->timeframe);
         char *sql_get_candles = (char *)malloc(maxlength);
         char *affix = "ORDER BY epoch DESC LIMIT";
-        snprintf(sql_get_size, maxlength, "SELECT epoch FROM \"%s\" %s %i;", model->timeframe, affix, count);
+        snprintf(sql_get_size, maxlength, "SELECT epoch FROM \"%s\" %s %i;", bincdata->timeframe, affix, count);
         rc = sqlite3_prepare_v2(database, sql_get_candles, -1, &stmt, NULL);
-        if (rc != SQLITE_OK)
-        {
-            fprintf(stderr, "Failed to prepare statement: %s\n", sqlite3_errmsg(database));
-            return model->count;
-        }
         rc = sqlite3_step(stmt);
-        if (rc != SQLITE_ROW)
-        {
-            return model->count;
-        }
 
         for (size_t index = 0; index > count; index++)
         {
-            Candle *candle = g_object_new(CANDLE_TYPE_OBJECT, NULL);
-            candle->data = model->data;
-            candle->time = model->time;
+            BincCandle *candle = g_object_new(BINC_TYPE_CANDLE, NULL);
+            candle->data = bincdata->data;
+            candle->time = bincdata->time;
             candle->price->epoch = g_date_time_new_from_unix_utc(sqlite3_column_int64(stmt, 0));
             candle->price->open = sqlite3_column_double(stmt, 1);
             candle->price->close = sqlite3_column_double(stmt, 2);
             candle->price->high = sqlite3_column_double(stmt, 3);
             candle->price->low = sqlite3_column_double(stmt, 4);
-            candle_list_model_add_item(model, candle);
+            g_list_store_append(bincdata->store, candle);
         }
 
-        return model->count - count;
+        return bincdata->count - count;
     }
 }
 
-void *save_history(void *data)
+void save_history(GTask *task, gpointer source, gpointer data, GCancellable *unused)
 {
-    CandleListModel *model = (CandleListModel *)data;
-    int items = g_list_model_get_n_items((GListModel *)model);
-    for (size_t position = items - model->count; position < items; position++)
-    {
-        int length = strlen(model->home) + strlen(model->instrument->symbol) + 15;
-        char path[length];
-        snprintf(path, length, "%sdatabases/%s.db", model->home, model->instrument->symbol);
-        sqlite3 *database;
-        int rc = sqlite3_open(path, &database);
-        if (rc != SQLITE_OK)
-        {
-            fprintf(stderr, "Cannot open database: %s\n", sqlite3_errmsg(database));
-            return NULL;
-        }
-        size_t maxlength = 115 + strlen(model->timeframe);
-        char *sql_symbol_history = (char *)malloc(maxlength);
-        char *suffix = "epoch INTEGER PRIMARY KEY, open INTEGER, close INTEGER, high INTEGER, low INTEGER);";
-        snprintf(sql_symbol_history, maxlength, "CREATE TABLE IF NOT EXISTS \"%s\" (%s", model->timeframe, suffix);
-        char *err_msg = NULL;
-        rc = sqlite3_exec(database, sql_symbol_history, 0, 0, &err_msg);
-        free(sql_symbol_history);
-        if (rc != SQLITE_OK)
-        {
-            fprintf(stderr, "SQL error: %s\n", err_msg);
-            sqlite3_free(err_msg);
-            sqlite3_close(database);
-            return NULL;
-        }
-        suffix = "epoch, open, close, high, low) VALUES (?, ?, ?, ?, ?);";
-        maxlength = 81 + strlen(model->timeframe);
-        char *sql_insert = (char *)malloc(maxlength);
-        snprintf(sql_insert, maxlength, "INSERT OR IGNORE INTO \"%s\" (%s", model->timeframe, suffix);
+    BincData *bincdata = (BincData *)data;
+    GListModel *model = (GListModel *)bincdata->store;
+    int items = g_list_model_get_n_items(model);
 
+    int length = strlen(bincdata->home) + strlen(bincdata->instrument->symbol) + 13;
+    char *path = (char *)malloc(length);
+    snprintf(path, length, "%shistory/%s.db", bincdata->home, bincdata->instrument->symbol);
+    sqlite3 *database;
+    int rc = sqlite3_open(path, &database);
+    free(path);
+    size_t maxlength = 115 + strlen(bincdata->timeframe);
+    char *sql_symbol_history = (char *)malloc(maxlength);
+    char *suffix = "epoch INTEGER PRIMARY KEY, open INTEGER, close INTEGER, high INTEGER, low INTEGER);";
+    snprintf(sql_symbol_history, maxlength, "CREATE TABLE IF NOT EXISTS \"%s\" (%s", bincdata->timeframe, suffix);
+    char *err_msg = NULL;
+    rc = sqlite3_exec(database, sql_symbol_history, 0, 0, &err_msg);
+    free(sql_symbol_history);
+    suffix = "epoch, open, close, high, low) VALUES (?, ?, ?, ?, ?);";
+    maxlength = 81 + strlen(bincdata->timeframe);
+    char *sql_insert = (char *)malloc(maxlength);
+    snprintf(sql_insert, maxlength, "INSERT OR IGNORE INTO \"%s\" (%s", bincdata->timeframe, suffix);
+    for (size_t position = items - bincdata->count; position < items; position++)
+    {
         sqlite3_stmt *stmt;
         rc = sqlite3_prepare_v2(database, sql_insert, -1, &stmt, NULL);
-        if (rc != SQLITE_OK)
-        {
-            fprintf(stderr, "Failed to prepare statement: %s\n", sqlite3_errmsg(database));
-            sqlite3_close(database);
-            return NULL;
-        }
-
-        Candle *candle = g_list_model_get_item((GListModel *)model, position);
+        BincCandle *candle = g_list_model_get_item((GListModel *)model, position);
 
         sqlite3_bind_int64(stmt, 1, g_date_time_to_unix(candle->price->epoch));
         sqlite3_bind_double(stmt, 2, candle->price->open);
@@ -124,20 +88,9 @@ void *save_history(void *data)
         sqlite3_bind_double(stmt, 5, candle->price->low);
 
         rc = sqlite3_step(stmt);
-        if (rc != SQLITE_DONE)
-        {
-            fprintf(stderr, "Failed to execute statement: %s\n", sqlite3_errmsg(database));
-            sqlite3_finalize(stmt);
-            sqlite3_close(database);
-            return NULL;
-        }
-
         sqlite3_finalize(stmt);
-        sqlite3_close(database);
     }
-    if (items == 1)
-        g_object_unref(model);
-    return NULL;
+    sqlite3_close(database);
 }
 
 static void create_symbol_database(sqlite3 *database)
@@ -183,64 +136,30 @@ static void create_symbol_database(sqlite3 *database)
     sqlite3_close(database);
 }
 
-Symbol *restore_last_instrument(DataObject *object)
+BincSymbol *restore_last_instrument(BincData *bincdata)
 {
-    int length = strlen(object->home) + 21;
+    int length = strlen(bincdata->home) + 11;
     char path[length];
-    snprintf(path, length, "%sdatabases/symbols.db", object->home);
-    GFile *file = g_file_new_for_path(path);
-    GFile *parent = g_file_get_parent(file);
-    int rc;
+    snprintf(path, length, "%ssession.db", bincdata->home);
     sqlite3_stmt *stmt;
     sqlite3 *database;
-    if (g_file_query_exists(parent, NULL) && g_file_query_exists(file, NULL))
-    {
-        rc = sqlite3_open(path, &database);
-    }
-    else
-    {
-        g_file_make_directory_with_parents(parent, NULL, NULL);
-        rc = sqlite3_open(path, &database);
-        create_symbol_database(database);
-        soup_websocket_connection_send_text(object->connection, request_active_symbols());
-        return NULL;
-    }
+    int rc = sqlite3_open(path, &database);
 
     char *sql = "SELECT symbol FROM Session LIMIT 1;";
     rc = sqlite3_prepare_v2(database, sql, -1, &stmt, NULL);
     rc = sqlite3_step(stmt);
-    if (rc != SQLITE_ROW)
-    {
-        return NULL;
-    }
 
     char *buffer = strdup((const char *)sqlite3_column_text(stmt, 0));
     sqlite3_finalize(stmt);
 
     sql = "SELECT * FROM Symbols WHERE symbol = ?;";
     rc = sqlite3_prepare_v2(database, sql, -1, &stmt, NULL);
-    if (rc != SQLITE_OK)
-    {
-        free(buffer);
-        return NULL;
-    }
 
     sqlite3_bind_text(stmt, 1, buffer, -1, SQLITE_TRANSIENT);
     rc = sqlite3_step(stmt);
     free(buffer);
-    if (rc != SQLITE_ROW)
-    {
-        sqlite3_finalize(stmt);
-        return NULL;
-    }
 
-    Symbol *symbol = malloc(sizeof(Symbol));
-    if (symbol == NULL)
-    {
-        fprintf(stderr, "Memory allocation failed.\n");
-        sqlite3_finalize(stmt);
-        return NULL;
-    }
+    BincSymbol *symbol = malloc(sizeof(BincSymbol));
 
     symbol->symbol = strdup((const char *)sqlite3_column_text(stmt, 0));
     symbol->display_name = strdup((const char *)sqlite3_column_text(stmt, 1));
@@ -269,11 +188,120 @@ Symbol *restore_last_instrument(DataObject *object)
     return symbol;
 }
 
-void update_active_symbols(DataObject *dataobject, JsonArray *list)
+static void create_default_tables(sqlite3 *database)
 {
-    int length = strlen(dataobject->home) + 21;
+    const char *sql_create_accounts = "CREATE TABLE IF NOT EXISTS Accounts ("
+                                      "account TEXT PRIMARY KEY,"
+                                      "currency TEXT"
+                                      ");";
+
+    const char *sql_create_symbols = "CREATE TABLE IF NOT EXISTS Symbols ("
+                                     "symbol TEXT PRIMARY KEY,"
+                                     "display_name TEXT,"
+                                     "allow_forward_starting BOOLEAN,"
+                                     "delay_amount INTEGER,"
+                                     "display_order INTEGER,"
+                                     "exchange_is_open BOOLEAN,"
+                                     "exchange_name TEXT,"
+                                     "intraday_interval_minutes INTEGER,"
+                                     "is_trading_suspended BOOLEAN,"
+                                     "market TEXT,"
+                                     "market_display_name TEXT,"
+                                     "pip REAL,"
+                                     "quoted_currency_symbol TEXT,"
+                                     "spot REAL,"
+                                     "spot_age TEXT,"
+                                     "spot_percentage_change TEXT,"
+                                     "spot_time TEXT,"
+                                     "subgroup TEXT,"
+                                     "subgroup_display_name TEXT,"
+                                     "submarket TEXT,"
+                                     "submarket_display_name TEXT,"
+                                     "symbol_type TEXT"
+                                     ");";
+
+    const char *sql_create_session = "CREATE TABLE IF NOT EXISTS Session ("
+                                     "symbol TEXT PRIMARY KEY,"
+                                     "profile INTEGER"
+                                     ");";
+
+    char *err_msg = NULL;
+    sqlite3_exec(database, sql_create_accounts, 0, 0, &err_msg);
+    sqlite3_exec(database, sql_create_symbols, 0, 0, &err_msg);
+    sqlite3_exec(database, sql_create_session, 0, 0, &err_msg);
+    sqlite3_stmt *stmt;
+    const char *sql = "INSERT OR IGNORE INTO Session (symbol, profile) VALUES ('BOOM1000', 0);";
+    sqlite3_prepare_v2(database, sql, -1, &stmt, NULL);
+    sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+    sqlite3_close(database);
+}
+
+void save_token_attributes(GTask *task, gpointer source, gpointer data, GCancellable *unused)
+{
+    BincData *bincdata = (BincData *)data;
+
+    int length = strlen(bincdata->home) + 11;
     char path[length];
-    snprintf(path, length, "%sdatabases/symbols.db", dataobject->home);
+    snprintf(path, length, "%ssession.db", bincdata->home);
+    sqlite3_stmt *stmt;
+    sqlite3 *database;
+    sqlite3_open(path, &database);
+    const char *sql = "INSERT OR IGNORE INTO Accounts (account, currency) VALUES (?, ?);";
+
+    for (int index = 0; index < 3; index++)
+    {
+        sqlite3_prepare_v2(database, sql, -1, &stmt, NULL);
+        sqlite3_bind_text(stmt, 1, bincdata->account[index]->account, -1, SQLITE_STATIC);
+        sqlite3_bind_text(stmt, 2, bincdata->account[index]->currency, -1, SQLITE_STATIC);
+        sqlite3_step(stmt);
+        sqlite3_finalize(stmt);
+    }
+    sqlite3_close(database);
+};
+
+gboolean get_token_attributes(BincData *bincdata)
+{
+    int length = strlen(bincdata->home) + 11;
+    char *path = (char *)malloc(length);
+    snprintf(path, length, "%ssession.db", bincdata->home);
+    GFile *file = g_file_new_for_path(path);
+    sqlite3_stmt *stmt;
+    sqlite3 *database;
+    if (!g_file_query_exists(file, NULL))
+    {
+        sqlite3_open(path, &database);
+        create_default_tables(database);
+        snprintf(path, length, "%shistory", bincdata->home);
+        GFile *history = g_file_new_for_path(path);
+        if (!g_file_query_exists(history, NULL))
+            g_file_make_directory(history, NULL, NULL);
+        free(path);
+        g_task_run_in_thread(bincdata->task, setup_soup_session);
+        gtk_window_set_child(bincdata->window, bincdata->webview);
+        return FALSE;
+    }
+    sqlite3_open(path, &database);
+    free(path);
+    char *sql = "SELECT account, currency FROM Accounts LIMIT 3;";
+    sqlite3_prepare_v2(database, sql, -1, &stmt, NULL);
+    for (int index = 0; index < 3; index++)
+    {
+        sqlite3_step(stmt);
+        bincdata->account[index]->account = g_strdup((const char *)sqlite3_column_text(stmt, 0));
+        bincdata->account[index]->currency = g_strdup((const char *)sqlite3_column_text(stmt, 1));
+        sqlite3_step(stmt);
+    }
+    sqlite3_finalize(stmt);
+    sqlite3_close(database);
+    return TRUE;
+}
+
+void update_active_symbols(BincData *bincdata, JsonArray *list)
+{
+    int length = strlen(bincdata->home) + 11;
+    char path[length];
+    snprintf(path, length, "%ssession.db", bincdata->home);
     sqlite3 *database;
     int rc = sqlite3_open(path, &database);
     sqlite3_stmt *stmt;
@@ -288,9 +316,9 @@ void update_active_symbols(DataObject *dataobject, JsonArray *list)
 
     sqlite3_exec(database, "BEGIN TRANSACTION;", NULL, NULL, NULL);
 
-    for (guint i = 0; i < json_array_get_length(list); i++)
+    for (guint index = 0; index < json_array_get_length(list); index++)
     {
-        JsonObject *object = json_array_get_object_element(list, i);
+        JsonObject *object = json_array_get_object_element(list, index);
         rc = sqlite3_prepare_v2(database, sql_insert, -1, &stmt, NULL);
 
         sqlite3_bind_text(stmt, 1, json_object_get_string_member(object, "symbol"), -1, SQLITE_TRANSIENT);
@@ -325,9 +353,9 @@ void update_active_symbols(DataObject *dataobject, JsonArray *list)
 
 void set_default_instrument(char *home)
 {
-    int length = strlen(home) + 21;
+    int length = strlen(home) + 11;
     char path[length];
-    snprintf(path, length, "%sdatabases/symbols.db", home);
+    snprintf(path, length, "%ssession.db", home);
     sqlite3 *database;
     int rc = sqlite3_open(path, &database);
     if (rc != SQLITE_OK)
@@ -356,7 +384,7 @@ void set_default_instrument(char *home)
     sqlite3_finalize(stmt);
 }
 
-static int update_symbol(sqlite3 *db, Symbol *symbol)
+static int update_symbol(sqlite3 *db, BincSymbol *symbol)
 {
     const char *sql_update = "UPDATE Symbols SET "
                              "allow_forward_starting = ?, "

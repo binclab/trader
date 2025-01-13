@@ -38,7 +38,7 @@
 					"base": "$gcc",
 					"fileLocation": [
 						"relative",
-						"${workspaceFolder}/terminal",
+						"${workspaceFolder}/trader",
 					]
 				}
 			],
