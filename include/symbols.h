@@ -17,10 +17,12 @@
 #define SYMBOL_CRASH1000 "CRASH1000"
 #define SYMBOL_VI75 "R_75"
 #define SYMBOL_GBPUSD "frxGBPUSD"
+#define SYMBOL_EURUSD "frxEURUSD"
 #define SYMBOL_GOLDBASKET "WLDXAU"
 
 #define CANDLE_WIDTH 24
 #define CANDLE_HEIGHT 720
+#define CANVAS_HEIGHT 720
 #define MARKER_HEIGHT 36
 #define CONTENT_HEIGHT 248
 #define CONTENT_WIDTH 338
@@ -45,7 +47,7 @@ typedef struct _BincSymbol
     gint is_trading_suspended;
     gchar *market;
     gchar *market_display_name;
-    gdouble pip;
+    gint pip;
     gchar *quoted_currency_symbol;
     gdouble spot;
     gchar *spot_age;
@@ -83,9 +85,14 @@ typedef enum
     CANDLES
 } TickType;
 
-typedef struct _CandleBuffer{
-    GLuint vbo;
-} CandleBuffer;
+typedef struct _SymbolData
+{
+    gchar *symbol;
+    gchar *name;
+    gdouble bid;
+    gdouble ask;
+    gdouble spot;
+} SymbolData;
 
 typedef struct _CandleTime
 {
@@ -111,7 +118,7 @@ typedef struct _CandleData
     GtkOverlay *overlay;
     GtkBox *chartgrow;
     GtkBox *scalegrow;
-    GtkRange *rangescale;
+    GtkRange *scale;
     GLuint program;
     gint marker;
     gdouble maximum;
@@ -121,6 +128,8 @@ typedef struct _CandleData
     gdouble close;
     gint abscissa;
     gint count;
+    GListStore *labels;
+    //gint degree;
 } CandleData;
 
 typedef struct _CandlePrice
@@ -129,7 +138,7 @@ typedef struct _CandlePrice
     gdouble low;
     gdouble open;
     gdouble close;
-    GDateTime *epoch;
+    gint64 epoch;
 } CandlePrice;
 
 typedef struct _BincCandle
@@ -139,6 +148,7 @@ typedef struct _BincCandle
     CandleData *data;
     CandleTime *time;
     CandleStatistics *stat;
+    GtkGLArea *area;
 } BincCandle;
 
 typedef struct _BincData
@@ -152,10 +162,11 @@ typedef struct _BincData
 
     SoupWebsocketConnection *connection;
 
+    GtkDropDown *symbolbox;
     GtkToggleButton *led;
     GtkWidget *widget;
     GtkWidget *webview;
-    GtkDrawingArea *pointer;
+    GtkGLArea *pointer;
     GtkGLArea *cartesian;
     GtkWidget *child;
     GtkWindow *window;
@@ -165,7 +176,8 @@ typedef struct _BincData
     GtkViewport *timeport;
     GtkScrolledWindow *scalescroll;
     GtkScrollInfo *scrollinfo;
-    GtkAdjustment *adjustment;
+    GtkAdjustment *hadjustment;
+    GtkAdjustment *vadjustment;
 
     AccountProfile *account[3];
     AccountProfile *profile;
@@ -179,7 +191,7 @@ typedef struct _BincData
     CandleStatistics *stat;
 } BincData;
 
-GtkFixed *add_candle(BincData *bincdata, BincCandle *candle);
+void add_candle(BincData *bincdata, BincCandle *candle, gboolean current);
 void create_scale(CandleData *data, gdouble price, gboolean prepend);
 void setup_cartesian(GtkBox *parent, BincData *bincdata);
 

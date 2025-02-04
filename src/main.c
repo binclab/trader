@@ -1,16 +1,6 @@
 #include "main.h"
 #include "cleanup.h"
 
-static void synchronize_horizontal_scroll(GtkAdjustment *adjustment, GtkAdjustment *other_adjustment)
-{
-    gtk_adjustment_set_value(other_adjustment, gtk_adjustment_get_value(adjustment));
-}
-
-static void synchronize_vertical_scroll(GtkAdjustment *adjustment, GtkAdjustment *other_adjustment)
-{
-    gtk_adjustment_set_value(other_adjustment, gtk_adjustment_get_value(adjustment));
-}
-
 static void update_scale(GtkRange *range, BincData *bincdata)
 {
     GtkAdjustment *adjustment = gtk_range_get_adjustment(range);
@@ -75,22 +65,14 @@ static void listen_to_network(GNetworkMonitor *monitor, gboolean available, Binc
 
 void create_chart(BincData *bincdata)
 {
-    int count = g_list_model_get_n_items((GListModel *)bincdata->store);
-
+    GListModel *model = G_LIST_MODEL(bincdata->store);
+    int count = g_list_model_get_n_items(model);
     for (int position = 0; position < count; position++)
     {
-        BincCandle *candle = g_list_model_get_item((GListModel *)bincdata->store, position);
-        GtkFixed *fixed = add_candle(bincdata, candle);
+        BincCandle *candle = g_list_model_get_item(model, position);
+        add_candle(bincdata, candle, position == count - 1);
         // double distance = 12 * (candle->price->open - candle->data->lowest);
         // gtk_fixed_put(fixed, bincdata->widget, 0, distance);
-        if (position == count - 1)
-        {
-            bincdata->price = candle->price;
-        }
-        else
-        {
-            bincdata->widget = NULL;
-        }
         /*if (
         {
             bincdata->widget = create_canvas(candle);
@@ -109,47 +91,130 @@ void create_chart(BincData *bincdata)
         }*/
         // free(candles[position]);
     }
-    GtkAdjustment *adjustment = gtk_range_get_adjustment(bincdata->data->rangescale);
+
+    GtkAdjustment *adjustment = gtk_range_get_adjustment(bincdata->data->scale);
     CandleStatistics *stat = bincdata->stat;
     gtk_adjustment_set_upper(adjustment, stat->highest);
     gtk_adjustment_set_lower(adjustment, stat->lowest);
-    bincdata->data->space = (stat->highest - stat->lowest) / 20;
     // data->height = bincdata->rectangle->height / 20;
-    bincdata->data->minimum = stat->lowest;
-    bincdata->data->maximum = stat->highest;
-    for (gdouble index = stat->lowest; index < stat->highest; index += bincdata->data->space)
+    gdouble value = stat->highest; //+ stat->range * 5 - 0.56 * stat->range;
+    bincdata->data->space = stat->range / 20;
+    GListModel *list = G_LIST_MODEL(bincdata->data->labels);
+
+    guint maximum = g_list_model_get_n_items(list);
+    for (guint index = 0; index < maximum; index++)
     {
-        /*char *buffer = g_strdup_printf("%.3f", index);
-        gtk_scale_add_mark((GtkScale *)bincdata->data->rangescale, index, GTK_POS_BOTTOM, buffer);
-        bincdata->data->maximum = index;
-        g_free(buffer);*/
-        create_scale(bincdata->data, index, 2);
+        GtkLabel *label = GTK_LABEL(g_list_model_get_item(list, index));
+        gchar *buffer = g_strdup_printf("%.*f", bincdata->instrument->pip, value);
+        gtk_label_set_text(label, buffer);
+        value -= bincdata->data->space;
+        g_free(buffer);
+        // gtk_scale_add_mark((GtkScale *)bincdata->data->scale, index, GTK_POS_BOTTOM, buffer);
+        // bincdata->data->maximum = index;
+        // create_scale(bincdata->data, index, 2);
     }
-    //g_signal_connect(bincdata->data->rangescale, "value-changed", (GCallback)update_scale, bincdata);
+    // gtk_adjustment_set_value(bincdata->vadjustment, 3240);
+    //  g_signal_connect(bincdata->data->scale, "value-changed", (GCallback)update_scale, bincdata);
 }
 
-/*
-static void activate_application(GtkApplication *app, gchar *home)
+static GdkContentProvider *prepare_provider(GtkDragSource *source, double x, double y, GtkListItem *item)
 {
-    GtkWidget *window = binc_window_new(app);
-    GtkNative *native = gtk_widget_get_native(window);
-    // create_symbol_database(home);
-    //  GdkMonitor *monitor = g_list_model_get_item(gdk_display_get_monitors(display), 0);
-    setup_window((BincWindow *)window, home);
-    setup_header();
-    setup_navigation(((BincWindow *)window)->height);
-    // setup_children((BincWindow *)window);
-    setup_signals((BincWindow *)window);
-    add_children();
-    gtk_window_set_child((GtkWindow *)window, layout1);
-    gtk_window_present((GtkWindow *)window);
-    g_idle_add_once((GSourceOnceFunc)setup_soup_session, window);
-    // g_signal_connect(window, "notify::focus-visible", (GCallback)notify_window_visible, home);
-}*/
+    // GtkWidget *widget = gtk_event_controller_get_widget(GTK_EVENT_CONTROLLER(drag));
+
+    // GtkListItem *item = GTK_LIST_ITEM(user_data);
+    GtkStringObject *object = GTK_STRING_OBJECT(gtk_list_item_get_item(item));
+    gchar *symbol = (gchar *)g_object_get_data(G_OBJECT(object), "symbol");
+    // gtk_drag_source_set_icon(drag, "text/plain");
+    // gtk_drag_icon_set_child()
+    /*GValue value = G_VALUE_INIT;
+    g_value_init(&value, G_TYPE_STRING);
+    g_value_set_string(&value, symbol);
+    GdkContentProvider *content =
+    gtk_drag_source_set_content(source, content);
+    return gdk_content_provider_new_for_value(&value);*/
+    return gdk_content_provider_new_typed(G_TYPE_STRING, symbol);
+}
+
+static void begin_symbol_drag(GtkDragSource *source, GdkDrag *drag, gpointer user_data)
+{
+    GdkCursor *cursor = gdk_cursor_new_from_name("grabbing", NULL);
+    gdk_drag_set_hotspot(drag, 0, 0);
+    gtk_widget_set_cursor(GTK_WIDGET(user_data), cursor);
+    g_object_unref(cursor);
+}
+
+static void end_symbol_drag(GtkDragSource *self, GdkDrag *drag, gboolean delete_data, gpointer user_data)
+{
+    GdkCursor *cursor = gdk_cursor_new_from_name("default", NULL);
+    gtk_widget_set_cursor(GTK_WIDGET(user_data), cursor);
+    g_object_unref(cursor);
+}
+
+void setup_market_navigation(GtkSignalListItemFactory *factory, GtkListItem *item, gpointer user_data)
+{
+    GtkWidget *label = gtk_label_new(NULL);
+    gtk_widget_set_halign(label, GTK_ALIGN_START);
+    gtk_list_item_set_child(item, label);
+    GtkDragSource *drag = gtk_drag_source_new();
+    // gtk_drag_source_set(drag, GDK_MODIFIER_MASK, NULL, 0, GDK_ACTION_COPY);
+    g_signal_connect(drag, "prepare", G_CALLBACK(prepare_provider), item);
+    g_signal_connect(drag, "drag-begin", G_CALLBACK(begin_symbol_drag), label);
+    g_signal_connect(drag, "drag-end", G_CALLBACK(end_symbol_drag), label);
+    gtk_widget_add_controller(label, GTK_EVENT_CONTROLLER(drag));
+}
+
+void bind_market_navigation(GtkSignalListItemFactory *factory, GtkListItem *item, gpointer user_data)
+{
+    if (g_str_equal((gchar *)user_data, "Symbols"))
+    {
+        GtkStringObject *object = GTK_STRING_OBJECT(gtk_list_item_get_item(item));
+        const gchar *name = gtk_string_object_get_string(object);
+        GtkLabel *label = GTK_LABEL(gtk_list_item_get_child(item));
+        gtk_label_set_text(label, name);
+    }
+}
+
+void unbind_market_navigation(GtkSignalListItemFactory *factory, GtkListItem *list_item, gpointer user_data)
+{
+}
+
+static void setup_actions(GtkBox *header, BincData *bincdata)
+{
+    GType string = gtk_string_object_get_type();
+    GListStore *model = g_list_store_new(string);
+    GtkExpression *expression = gtk_property_expression_new(string, NULL, "string");
+    GtkWidget *symbolbox = gtk_drop_down_new(G_LIST_MODEL(model), expression);
+    bincdata->symbolbox = GTK_DROP_DOWN(symbolbox);
+
+    // g_object_set_data(G_OBJECT(symbolbox), "store", store);
+    g_task_run_in_thread(bincdata->task, populate_favourite_symbols);
+    gtk_box_append(header, symbolbox);
+}
+
+static void setup_navigation(GtkNotebook *navigation, BincData *bincdata)
+{
+    GListModel *model = gtk_drop_down_get_model(bincdata->symbolbox);
+    GtkSelectionModel *selection = GTK_SELECTION_MODEL(gtk_multi_selection_new(model));
+    GtkWidget *market = gtk_column_view_new(selection);
+
+    gchar *title[] = {"Symbols", "Ask", "Bid", "Spot"};
+
+    for (gint index = 0; index < 4; index++)
+    {
+        GtkListItemFactory *factory = gtk_signal_list_item_factory_new();
+        g_signal_connect(factory, "setup", G_CALLBACK(setup_market_navigation), title[index]);
+        g_signal_connect(factory, "bind", G_CALLBACK(bind_market_navigation), title[index]);
+        g_signal_connect(factory, "unbind", G_CALLBACK(unbind_market_navigation), title[index]);
+        GtkColumnViewColumn *column = gtk_column_view_column_new(title[index], factory);
+        gtk_column_view_append_column(GTK_COLUMN_VIEW(market), column);
+    }
+
+    gtk_notebook_set_scrollable(navigation, TRUE);
+    gtk_notebook_append_page(navigation, market, gtk_label_new("Market"));
+}
 
 static void setup_children(BincData *bincdata)
 {
-    GtkWidget *pricescale = gtk_scale_new(GTK_ORIENTATION_VERTICAL, NULL);
     GtkWidget *scalebox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
     GtkWidget *timebox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
     GtkWidget *chartbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
@@ -173,32 +238,35 @@ static void setup_children(BincData *bincdata)
     GtkWidget *b4 = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
     GtkWidget *b5 = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
     GtkWidget *b6 = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+    GtkWidget *header = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 2);
+
     GtkWidget *startchild = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
     GtkWidget *endchild = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
-
-    GtkWidget *t1 = gtk_button_new();
     GtkWidget *t2 = gtk_button_new();
-    GtkWidget *navigation = gtk_button_new();
+    GtkWidget *navigation = gtk_notebook_new();
     GtkWidget *t4 = gtk_button_new();
 
     GtkWidget *fixed = gtk_fixed_new();
     GtkWidget *paned = gtk_paned_new(GTK_ORIENTATION_VERTICAL);
 
     bincdata->data->paned = (GtkPaned *)paned;
-    bincdata->data->box = (GtkBox *)timebox;
-    bincdata->data->chart = (GtkBox *)chartbox;
-    bincdata->data->chartgrow = (GtkBox *)growbox;
-    bincdata->data->rangescale = (GtkRange *)pricescale;
+    bincdata->data->box = GTK_BOX(timebox);
+    bincdata->data->chart = GTK_BOX(chartbox);
+    bincdata->data->chartgrow = GTK_BOX(growbox);
     bincdata->scalelabel = (GtkLabel *)scalelabel;
     bincdata->timeport = (GtkViewport *)timeport;
     bincdata->scrollinfo = gtk_scroll_info_new();
     bincdata->scalescroll = (GtkScrolledWindow *)scalescroll;
     bincdata->chartgravity = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
     bincdata->timegravity = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
-    // bincdata->adjustment = gtk_scrolled_window_get_hadjustment((GtkScrolledWindow*)timescroll);
-    bincdata->adjustment = gtk_scrolled_window_get_hadjustment((GtkScrolledWindow *)timescroll);
+    bincdata->hadjustment = gtk_scrolled_window_get_hadjustment((GtkScrolledWindow *)timescroll);
 
-    setup_cartesian((GtkBox *)cartbox, bincdata);
+    g_object_set_data(G_OBJECT(timebox), "model", g_list_store_new(GTK_TYPE_WIDGET));
+    g_object_set_data(G_OBJECT(chartbox), "model", g_list_store_new(GTK_TYPE_WIDGET));
+
+    setup_cartesian(GTK_BOX(cartbox), bincdata);
+    setup_actions(GTK_BOX(header), bincdata);
+    setup_navigation(GTK_NOTEBOOK(navigation), bincdata);
     gtk_overlay_add_overlay(bincdata->data->overlay, chartbox);
 
     // gtk_widget_set_valign(chartbox, GTK_ALIGN_CENTER);
@@ -210,12 +278,11 @@ static void setup_children(BincData *bincdata)
     gtk_widget_set_size_request(bincdata->chartgravity, 48, CANDLE_HEIGHT);
     gtk_widget_set_size_request(bincdata->timegravity, 48, 48);
     gtk_widget_set_size_request(scalebox, 138, CANDLE_HEIGHT);
-    gtk_widget_set_size_request(pricescale, 16, CANDLE_HEIGHT);
     gtk_widget_set_size_request(paned, 1080, CANDLE_HEIGHT);
     gtk_widget_set_size_request(cartscroll, 1080, CANDLE_HEIGHT - CONTENT_HEIGHT);
     gtk_widget_set_size_request(scalelabel, 138, 48);
     gtk_widget_set_size_request(t2, -1, 200);
-    gtk_widget_set_size_request(navigation, 200, -1);
+    gtk_widget_set_size_request(navigation, 256, -1);
 
     /*gtk_widget_set_size_request(chartscroll, width, height);
     gtk_widget_set_size_request(timescroll, width, 48);
@@ -233,8 +300,6 @@ static void setup_children(BincData *bincdata)
     gtk_widget_set_vexpand(navigation, TRUE);
 
     // gtk_widget_set_margin_end(chartport, 138);
-
-    gtk_widget_set_valign(pricescale, GTK_ALIGN_CENTER);
     gtk_widget_set_halign(scalescroll, GTK_ALIGN_END);
     // gtk_widget_set_valign(paned, GTK_ALIGN_);
     // gtk_widget_set_halign(paned, GTK_ALIGN_END);
@@ -243,11 +308,9 @@ static void setup_children(BincData *bincdata)
 
     // gtk_widget_add_css_class(growboxscale, "marker");
 
-    gtk_widget_set_sensitive(pricescale, FALSE);
-
     gtk_viewport_set_scroll_to_focus(GTK_VIEWPORT(timeport), TRUE);
     gtk_scroll_info_set_enable_horizontal(bincdata->scrollinfo, TRUE);
-    gtk_range_set_inverted(bincdata->data->rangescale, TRUE);
+    gtk_range_set_inverted(bincdata->data->scale, TRUE);
 
     /*gtk_scrolled_window_set_policy((GtkScrolledWindow *)scalescroll, GTK_POLICY_EXTERNAL, GTK_POLICY_EXTERNAL);
     gtk_scrolled_window_set_policy((GtkScrolledWindow *)timescroll, GTK_POLICY_EXTERNAL, GTK_POLICY_NEVER);
@@ -274,34 +337,29 @@ static void setup_children(BincData *bincdata)
     gtk_viewport_set_child((GtkViewport *)cartport, cartbox);
     gtk_viewport_set_child((GtkViewport *)timeport, b6);
 
-    // gtk_box_append((GtkBox *)growbox, chartbox);
-    gtk_box_append((GtkBox *)scalebox, pricescale);
-    // gtk_box_append((GtkBox *)scalebox, growboxscale);
-    gtk_box_append((GtkBox *)b6, timebox);
-    gtk_box_append((GtkBox *)b6, bincdata->timegravity);
-    // gtk_box_append((GtkBox *)b5, fixed);
-    gtk_box_append((GtkBox *)b5, bincdata->chartgravity);
-    // gtk_box_append((GtkBox *)b4, chartscroll);
-    // gtk_box_append((GtkBox *)b4, scalescroll);
-    gtk_box_append((GtkBox *)b3, timescroll);
-    gtk_box_append((GtkBox *)b3, scalelabel);
-    gtk_box_append((GtkBox *)b2, cartscroll);
-    gtk_box_append((GtkBox *)b2, b3);
-    gtk_box_append((GtkBox *)b1, navigation);
-    gtk_box_append((GtkBox *)b1, b2);
+    // gtk_box_append(GTK_BOX(growbox, chartbox);
+    // gtk_box_append(GTK_BOX(scalebox, growboxscale);
+    gtk_box_append(GTK_BOX(b6), timebox);
+    gtk_box_append(GTK_BOX(b6), bincdata->timegravity);
+    // gtk_box_append(GTK_BOX(b5, fixed);
+    gtk_box_append(GTK_BOX(b5), bincdata->chartgravity);
+    // gtk_box_append(GTK_BOX(b4, chartscroll);
+    // gtk_box_append(GTK_BOX(b4, scalescroll);
+    gtk_box_append(GTK_BOX(b3), timescroll);
+    gtk_box_append(GTK_BOX(b3), scalelabel);
+    gtk_box_append(GTK_BOX(b2), cartscroll);
+    gtk_box_append(GTK_BOX(b2), b3);
+    gtk_box_append(GTK_BOX(b1), navigation);
+    gtk_box_append(GTK_BOX(b1), b2);
 
-    gtk_box_append((GtkBox *)bincdata->child, t1);
-    gtk_box_append((GtkBox *)bincdata->child, b1);
-    gtk_box_append((GtkBox *)bincdata->child, t2);
+    gtk_box_append(GTK_BOX(bincdata->child), header);
+    gtk_box_append(GTK_BOX(bincdata->child), b1);
+    gtk_box_append(GTK_BOX(bincdata->child), t2);
 
     GtkAdjustment *charthadjustment = gtk_scrolled_window_get_hadjustment((GtkScrolledWindow *)cartscroll);
     GtkAdjustment *chartvadjustment = gtk_scrolled_window_get_vadjustment((GtkScrolledWindow *)cartscroll);
     GtkAdjustment *timeadjustment = gtk_scrolled_window_get_hadjustment((GtkScrolledWindow *)timescroll);
     GtkAdjustment *scaleadjustment = gtk_scrolled_window_get_vadjustment((GtkScrolledWindow *)scalescroll);
-    g_signal_connect(charthadjustment, "value-changed", (GCallback)synchronize_horizontal_scroll, timeadjustment);
-    g_signal_connect(timeadjustment, "value-changed", (GCallback)synchronize_horizontal_scroll, charthadjustment);
-    g_signal_connect(scaleadjustment, "value-changed", (GCallback)synchronize_vertical_scroll, chartvadjustment);
-    g_signal_connect(chartvadjustment, "value-changed", (GCallback)synchronize_vertical_scroll, scaleadjustment);
     // g_signal_connect(networkmonitor, "network-changed", (GCallback)listen_to_network, window);
 }
 
@@ -370,28 +428,28 @@ static void load_changed(WebKitWebView *webview, WebKitLoadEvent event, gpointer
         if (strstr(url, "https://www.binclab.com/deriv?"))
         {
             char *param = strtok(g_strdup(strstr(url, "acct1")), "&");
-            for (int i = 0; param != NULL; i++)
+            for (int index = 0; param != NULL; index++)
             {
                 char *value = strchr(param, '=');
                 value++;
-                bincdata->account[i]->account = g_strdup(value);
+                bincdata->account[index]->account = g_strdup(value);
 
                 param = strtok(NULL, "&");
                 value = strchr(param, '=');
                 value++;
-                bincdata->account[i]->token = g_strdup(value);
+                bincdata->account[index]->token = g_strdup(value);
 
                 param = strtok(NULL, "&");
                 value = strchr(param, '=');
                 value++;
-                bincdata->account[i]->currency = g_strdup(value);
+                bincdata->account[index]->currency = g_strdup(value);
                 param = strtok(NULL, "&");
 
                 secret_password_store(get_token_schema(), SECRET_COLLECTION_DEFAULT,
-                                      "Binc Trader Token", bincdata->account[i]->token, NULL,
+                                      "Binc Trader Token", bincdata->account[index]->token, NULL,
                                       store_token, bincdata,
-                                      "account", bincdata->account[i]->account,
-                                      "currency", bincdata->account[i]->currency,
+                                      "account", bincdata->account[index]->account,
+                                      "currency", bincdata->account[index]->currency,
                                       NULL);
             }
             g_task_run_in_thread(bincdata->task, save_token_attributes);
@@ -412,12 +470,12 @@ static void setup_webview(BincData *bincdata)
         webkit_web_view_get_network_session((WebKitWebView *)bincdata->webview);
     WebKitCookieManager *cookiejar =
         webkit_network_session_get_cookie_manager(session);
-    char *storage = (char *)malloc(strlen(bincdata->home) + 10);
-    sprintf(storage, "%ssession.db", bincdata->home);
+    gchar *storage = g_strdup_printf("%ssession.db", bincdata->home);
     gchar *uri = "https://oauth.deriv.com/oauth2/authorize?app_id=66477";
     webkit_cookie_manager_set_persistent_storage(cookiejar, storage, 1);
     webkit_web_view_load_uri((WebKitWebView *)bincdata->webview, uri);
     g_signal_connect(bincdata->webview, "load-changed", (GCallback)load_changed, bincdata);
+    g_free(storage);
 }
 
 static void on_token_lookup(GObject *source, GAsyncResult *result, gpointer data)
@@ -488,7 +546,7 @@ static void activate(GtkApplication *application, BincData *bincdata)
     setup_children(bincdata);
     setup_accounts(bincdata);
 
-    g_signal_connect(bincdata->window, "close-request", (GCallback)close_request, bincdata);
+    g_signal_connect(bincdata->window, "close-request", G_CALLBACK(close_request), bincdata);
 }
 
 /*static void activate(GtkWindow *logowindow, BincData *bincdata)
@@ -499,7 +557,7 @@ static void activate(GtkApplication *application, BincData *bincdata)
     bincdata->window = (GtkWindow *)gtk_application_window_new(application);
     bincdata->child = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
     gtk_widget_set_size_request((GtkWidget*)bincdata->window, 1280, CANDLE_HEIGHT);
-    setup_children((GtkBox *)bincdata->child, bincdata);
+    setup_children(GTK_BOX(bincdata->child, bincdata);
     gtk_window_set_title(bincdata->window, "Binc Terminal");
     gtk_window_present(bincdata->window);
     setup_accounts(bincdata);
@@ -544,11 +602,9 @@ int main(int argc, char *argv[])
     BincData *bincdata = g_object_new(BINC_TYPE_DATA, NULL);
     bincdata->home = g_strdup_printf("%s/binctrader/", g_get_user_data_dir());
     GtkApplication *app = gtk_application_new("com.binclab.trader", G_APPLICATION_DEFAULT_FLAGS);
-    g_signal_connect(app, "activate", (GCallback)activate, bincdata);
-    // g_signal_connect(app, "shutdown", (GCallback)shutdown, bincdata);
+    g_signal_connect(app, "activate", G_CALLBACK(activate), bincdata);
+    g_signal_connect(app, "shutdown", G_CALLBACK(shutdown), bincdata);
     g_application_run((GApplication *)app, argc, argv);
-    g_object_unref(bincdata);
-    g_object_unref(app);
     return 0;
 }
 

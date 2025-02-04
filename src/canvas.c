@@ -2,36 +2,32 @@
 
 static void bind_vertices(GtkWidget *widget, BincCandle *candle)
 {
-    GLfloat scale = CANDLE_HEIGHT / candle->stat->scale;
+
+    GtkWidget *parent = gtk_widget_get_parent(widget);
+    GdkRectangle rectangle;
+    rectangle.height = gtk_widget_get_height(parent);
+    rectangle.width = gtk_widget_get_width(parent);
     gboolean bearish = candle->price->open > candle->price->close;
     GLfloat red = bearish ? 1.0f : 0.0f;
     GLfloat green = bearish ? 0.0f : 1.0f;
 
-    /*float high = candle->data->scale * (candle->price->high - candle->data->baseline);
-    float open = candle->data->scale * (candle->price->open - candle->data->baseline);
-    float close = candle->data->scale * (candle->price->close - candle->data->baseline);
-    float low = candle->data->scale * (candle->price->low - candle->data->baseline);*/
+    gfloat high = candle->stat->scale * (candle->price->high - candle->stat->baseline);
+    gfloat low = candle->stat->scale * (candle->price->low - candle->stat->baseline);
 
-    GLfloat high = scale * (candle->price->high - candle->stat->baseline);
-    GLfloat low = scale * (candle->price->low - candle->stat->baseline);
-    gdouble maximum = fmax(fabs(high), fabs(low));
-    gint factor = 1;
+    gfloat scale = candle->stat->scale;
+    gfloat maximum = fmaxf(fabsf(high), fabsf(low));
+
     if (maximum > 1.0f)
     {
-        factor = 2;
-        scale = CANDLE_HEIGHT / (candle->stat->scale * factor);
-    }
-    else if (maximum > 2.0f)
-    {
-        factor = 3;
-        scale = CANDLE_HEIGHT / (candle->stat->scale * factor);
+        gint height = ceilf(CANDLE_HEIGHT * maximum);
+        gtk_widget_set_size_request(widget, CANDLE_WIDTH, height);
+        scale = scale * CANDLE_HEIGHT / height;
     }
     high = scale * (candle->price->high - candle->stat->baseline);
     low = scale * (candle->price->low - candle->stat->baseline);
-    GLfloat open = scale * (candle->price->open - candle->stat->baseline);
-    GLfloat close = scale * (candle->price->close - candle->stat->baseline);
-    gtk_widget_set_size_request(widget, CANDLE_WIDTH, CANDLE_HEIGHT * factor);
-    //gtk_widget_set_size_request(gtk_widget_get_parent(widget), CANDLE_WIDTH, CANDLE_HEIGHT * factor);
+
+    gfloat close = scale * (candle->price->close - candle->stat->baseline);
+    gfloat open = scale * (candle->price->open - candle->stat->baseline);
 
     GLfloat vertices[126] = {
         // Triangle BincLine 1
@@ -69,11 +65,15 @@ static gboolean render_canvas(GtkGLArea *area, GdkGLContext *context, gpointer u
     }
 
     BincCandle *candle = BINC_CANDLE(user_data);
-    guint *buffer = (guint *)g_object_get_data(G_OBJECT(area), "buffer");
+    // GLuint buffer;
+    // glGenBuffers(1, &buffer);
+    //  glBindBuffer(GL_ARRAY_BUFFER, *buffer);
+    // g_object_set_data(G_OBJECT(area), "buffer", &buffer);
+    GLuint buffer = GPOINTER_TO_UINT(g_object_get_data(G_OBJECT(area), "buffer"));
 
     // glClearColor(0.0, 0.0, 0.0, 0.0);
     glClear(GL_COLOR_BUFFER_BIT);
-    glBindBuffer(GL_ARRAY_BUFFER, *buffer);
+    glBindBuffer(GL_ARRAY_BUFFER, buffer);
     bind_vertices(GTK_WIDGET(area), candle);
     glUseProgram(candle->data->program);
 
@@ -102,20 +102,17 @@ static void realize_canvas(GtkGLArea *area, CandleData *data)
     glGenVertexArrays(1, &vao);
     glBindVertexArray(vao);*/
 
-    CandleBuffer *buffer = g_new0(CandleBuffer, 1);
-    buffer->vbo = 0;
-    g_object_set_data(G_OBJECT(area), "buffer", buffer);
-    glGenBuffers(1, &buffer->vbo);
+    GLuint buffer;
+    glGenBuffers(1, &buffer);
+    g_object_set_data(G_OBJECT(area), "buffer", GUINT_TO_POINTER(buffer));
 }
 
 static void unrealize_canvas(GtkGLArea *area, BincCandle *candle)
 {
     if (gtk_gl_area_get_error(area) == NULL)
     {
-        CandleBuffer *buffer = g_object_get_data(G_OBJECT(area), "buffer");
-        glDeleteVertexArrays(1, &buffer->vbo);
-        g_free(buffer);
-        g_date_time_unref(candle->price->epoch);
+        GLuint buffer = GPOINTER_TO_UINT(g_object_get_data(G_OBJECT(area), "buffer"));
+        glDeleteVertexArrays(1, &buffer);
         free(candle->price);
         g_object_unref(candle);
     }
@@ -133,53 +130,63 @@ static GdkGLContext *create_context(GtkGLArea *area, GError *error)
     return context;
 }
 
-GtkFixed *add_candle(BincData *bincdata, BincCandle *candle)
+void add_candle(BincData *bincdata, BincCandle *candle, gboolean current)
 {
-    gint hours = g_date_time_get_hour(candle->price->epoch) + candle->time->hours;
-    gint minutes = g_date_time_get_minute(candle->price->epoch) + candle->time->minutes;
+    GDateTime *utctime = g_date_time_new_from_unix_utc(candle->price->epoch);
+    GDateTime *localtime = g_date_time_to_local(utctime);
+    gint hours = g_date_time_get_hour(localtime);     // + candle->time->hours;
+    gint minutes = g_date_time_get_minute(localtime); // + candle->time->minutes;
     gboolean even = minutes % 5 == 0;
     gchar *name = even ? g_strdup_printf("%02i:%02i", hours, minutes) : NULL;
-    GtkWidget *fixed = gtk_fixed_new();
     GtkWidget *line = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
     GtkWidget *label = gtk_label_new(name);
-    bincdata->widget = gtk_gl_area_new();
+    GtkWidget *widget = gtk_gl_area_new();
+    candle->area = GTK_GL_AREA(widget);
     g_free(name);
 
-    gtk_fixed_put((GtkFixed *)fixed, line, 1.7, 0);
-    gtk_gl_area_set_has_stencil_buffer((GtkGLArea *)bincdata->widget, TRUE);
-    gtk_widget_set_vexpand(fixed, TRUE);
+    if (current)
+    {
+        GObject *object = G_OBJECT(widget);
+        g_object_set_data(object, "area", bincdata->widget);
+        bincdata->widget = widget;
+        bincdata->price = candle->price;
+        g_object_set_data(object, "candle", candle);
+    }
+
+    gtk_gl_area_set_has_stencil_buffer(candle->area, TRUE);
     gtk_widget_set_vexpand(line, TRUE);
+    gtk_widget_set_vexpand(widget, FALSE);
     gtk_widget_set_halign(line, GTK_ALIGN_CENTER);
-    gtk_widget_set_valign(fixed, GTK_ALIGN_CENTER);
     // gtk_widget_set_halign(line, TRUE);
     gtk_widget_set_hexpand(line, FALSE);
-    gtk_widget_set_size_request(fixed, CANDLE_WIDTH, CANDLE_HEIGHT);
-    gtk_widget_set_size_request(bincdata->widget, CANDLE_WIDTH, CANDLE_HEIGHT);
+    gtk_widget_set_size_request(widget, CANDLE_WIDTH, CANVAS_HEIGHT);
     gtk_widget_set_size_request(label, CANDLE_WIDTH * 5, 48);
     // gtk_widget_set_margin_start(label, 3);
     gtk_widget_set_margin_start(label, 3);
-    gtk_widget_set_size_request(line, CANDLE_WIDTH / 2, CANDLE_HEIGHT);
+    gtk_widget_set_size_request(line, CANDLE_WIDTH / 2, CANVAS_HEIGHT);
     // gtk_widget_remove_css_class(glarea, "background");
-    gtk_widget_set_valign(bincdata->widget, GTK_ALIGN_CENTER);
-    gtk_widget_set_name(bincdata->widget, "candle");
+    gtk_widget_set_valign(widget, GTK_ALIGN_CENTER);
+    gtk_widget_set_name(widget, "candle");
     gtk_widget_set_name(label, "time");
     gtk_widget_set_name(line, "graduation");
     gtk_label_set_justify(GTK_LABEL(label), GTK_JUSTIFY_LEFT);
     if (even)
+    {
         gtk_box_append(bincdata->data->box, label);
-
+        GListStore *model = G_LIST_STORE(g_object_get_data(G_OBJECT(bincdata->data->box), "model"));
+        g_list_store_append(model, label);
+    }
     // double value = CANDLE_HEIGHT * 2 / candle->data->range;
     // gdouble ordinate = (candle->data->baseline - candle->price->open) * value;
     // gtk_fixed_put(bincdata->data->overlay, fixed, bincdata->data->abscissa, ordinate);
     // bincdata->data->abscissa += CANDLE_WIDTH;
-    gtk_box_append(bincdata->data->chart, fixed);
-    //  gtk_widget_realize(bincdata->widget);
-    g_signal_connect(bincdata->widget, "create-context", (GCallback)create_context, NULL);
-    g_signal_connect(bincdata->widget, "unrealize", (GCallback)unrealize_canvas, candle);
-    g_signal_connect(bincdata->widget, "realize", (GCallback)realize_canvas, candle->data);
-    g_signal_connect(bincdata->widget, "render", (GCallback)render_canvas, candle);
-
-    double distance = 720 * (candle->stat->highest - candle->price->open) / candle->stat->range;
-    gtk_fixed_put((GtkFixed *)fixed, bincdata->widget, 0, 0);
-    return (GtkFixed *)fixed;
+    // gtk_box_append(bincdata->data->chart, fixed);
+    //  gtk_widget_realize(widget);
+    g_signal_connect(widget, "create-context", (GCallback)create_context, NULL);
+    g_signal_connect(widget, "unrealize", (GCallback)unrealize_canvas, candle);
+    g_signal_connect(widget, "realize", (GCallback)realize_canvas, candle->data);
+    g_signal_connect(widget, "render", (GCallback)render_canvas, candle);
+    gtk_box_append(bincdata->data->chart, widget);
+    GListStore *model = g_object_get_data(G_OBJECT(bincdata->data->chart), "model");
+    g_list_store_append(model, widget);
 }

@@ -29,7 +29,8 @@
         "symbols.h": "c",
         "gl.h": "c",
         "database.h": "c",
-        "string.h": "c"
+        "string.h": "c",
+        "cleanup.h": "c"
     },
     "C_Cpp.default.compileCommands": "/home/binclab/trader/.build/compile_commands.json",
     "C_Cpp.default.configurationProvider": "mesonbuild.mesonbuild",
