@@ -1,26 +1,17 @@
 #ifndef SESSION_H
 #define SESSION_H
 
-#include "symbols.h"
+#include <webkit/webkit.h>
+#include <libsoup/soup.h>
+#include <libsecret/secret.h>
 #include "database.h"
 
-void create_chart(BincData *bincdata);
+void setup_webview(GObject *task);
+void present_actual_child(GObject *task);
+void save_token_attributes(GTask *task, gpointer source, gpointer userdata, GCancellable *unused);
+void load_changed(WebKitWebView *webview, WebKitLoadEvent event, gpointer userdata);
+void connected(GObject *object, GAsyncResult *result, gpointer userdata);
 
-void update_candle(BincData *bincdata, JsonObject *object);
-
-void setup_soup_session(GTask *task, gpointer source, gpointer data, GCancellable *unused);
-
-gchar *request_active_symbols();
-
-gchar *request_subscription(gchar *symbol);
-
-gchar *request_tick_history(gchar *symbol, int size);
-
-gchar *request_time();
-
-BincTick *get_tick(gchar *data, gssize size);
-//Candle **get_candle_history(JsonArray *list, guint length, BincWindow *window);
-
-gchar *request_ping();
+const SecretSchema *get_token_schema(void);
 
 #endif // SESSION_H

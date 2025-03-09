@@ -1,98 +1,228 @@
 #include "cleanup.h"
 
-static void free_tasks(GTask *task, gpointer source, gpointer data, GCancellable *unused)
+void shutdown(GtkApplication *application, gpointer userdata)
 {
-    BincData *bincdata = (BincData *)data;
-    g_object_unref(task);
-    g_object_unref(bincdata->task);
-    free(bincdata);
-}
-
-void free_instrument(BincSymbol *instrument)
-{
-    g_clear_pointer(&instrument->spot_age, g_free);
-    g_clear_pointer(&instrument->spot_percentage_change, g_free);
-    g_clear_pointer(&instrument->spot_time, g_free);
-    g_clear_pointer(&instrument->subgroup, g_free);
-    g_clear_pointer(&instrument->subgroup_display_name, g_free);
-    g_clear_pointer(&instrument->submarket, g_free);
-    g_clear_pointer(&instrument->submarket_display_name, g_free);
-    g_clear_pointer(&instrument->symbol, g_free);
-    g_clear_pointer(&instrument->symbol_type, g_free);
-
-    g_free(instrument);
-    instrument = NULL;
-}
-
-static void free_favourite_list(GListModel *model)
-{
-    GListStore *store = G_LIST_STORE(model);
-
-    for (guint index = 0; index < g_list_model_get_n_items(model); index++)
+    GObject *object = G_OBJECT(userdata);
+    // Checking if pointer is not null and unrefencing
+    gpointer pointer = g_object_get_data(object, "connection");
+    if (pointer)
     {
-        gpointer item = g_list_model_get_item(model, index);
-        if (item != NULL)
+        g_object_unref(pointer);
+    }
+
+    pointer = g_object_get_data(object, "session");
+    if (pointer)
+    {
+        g_object_unref(pointer);
+    }
+
+    pointer = g_object_get_data(object, "message");
+    if (pointer)
+    {
+        g_object_unref(pointer);
+    }
+
+    pointer = g_object_get_data(object, "time");
+    if (pointer)
+    {
+        g_object_unref(pointer);
+    }
+
+    pointer = g_object_get_data(object, "stat");
+    if (pointer)
+    {
+        g_free(pointer);
+    }
+
+    pointer = g_object_get_data(object, "candles");
+    if (pointer)
+    {
+        free_candles(G_LIST_STORE(pointer));
+        g_object_unref(pointer);
+    }
+
+    pointer = g_object_get_data(object, "profile");
+    if (pointer)
+    {
+        GListModel *model = G_LIST_MODEL(pointer);
+        gint count = g_list_model_get_n_items(model);
+        for (gint index = 0; index < count; index++)
         {
-            g_object_unref(item);
+            GObject *object = g_list_model_get_item(model, index);
+            gchar *data = g_object_get_data(object, "currency");
+            g_clear_pointer(&data, g_free);
+            data = g_object_get_data(object, "token");
+            g_clear_pointer(&data, g_free);
         }
+        g_object_unref(pointer);
     }
-    g_list_store_remove_all(store);
-    g_object_unref(model);
-}
 
-void free_model(GObject *object)
-{
-    GListModel *model = G_LIST_MODEL(g_object_get_data(object, "model"));
-
-    for (guint index = 0; index < g_list_model_get_n_items(model); index++)
+    pointer = g_object_get_data(object, "epoch");
+    if (pointer)
     {
-        GtkWidget *child = g_list_model_get_item(model, index);
-        gtk_box_remove(GTK_BOX(object), child);
+        g_object_unref(pointer);
     }
-    g_list_store_remove_all(G_LIST_STORE(model));
+
+    pointer = g_object_get_data(object, "token");
+    if (pointer)
+    {
+        g_object_unref(pointer);
+    }
+
+    // Freeing strings and other dynamically allocated memory
+
+    pointer = g_object_get_data(object, "home");
+    if (pointer)
+    {
+        g_clear_pointer(&pointer, g_free);
+    }
+
+    pointer = g_object_get_data(object, "display_name");
+    if (pointer)
+    {
+        g_clear_pointer(&pointer, g_free);
+    }
+
+    pointer = g_object_get_data(object, "exchange_name");
+    if (pointer)
+    {
+        g_clear_pointer(&pointer, g_free);
+    }
+
+    pointer = g_object_get_data(object, "market_display_name");
+    if (pointer)
+    {
+        g_clear_pointer(&pointer, g_free);
+    }
+
+    pointer = g_object_get_data(object, "market");
+    if (pointer)
+    {
+        g_clear_pointer(&pointer, g_free);
+    }
+
+    pointer = g_object_get_data(object, "quoted_currency_symbol");
+    if (pointer)
+    {
+        g_clear_pointer(&pointer, g_free);
+    }
+
+    pointer = g_object_get_data(object, "spot_age");
+    if (pointer)
+    {
+        g_clear_pointer(&pointer, g_free);
+    }
+
+    pointer = g_object_get_data(object, "spot_percentage_change");
+    if (pointer)
+    {
+        g_clear_pointer(&pointer, g_free);
+    }
+
+    pointer = g_object_get_data(object, "spot_time");
+    if (pointer)
+    {
+        g_clear_pointer(&pointer, g_free);
+    }
+
+    pointer = g_object_get_data(object, "subgroup_display_name");
+    if (pointer)
+    {
+        g_clear_pointer(&pointer, g_free);
+    }
+
+    pointer = g_object_get_data(object, "subgroup");
+    if (pointer)
+    {
+        g_clear_pointer(&pointer, g_free);
+    }
+
+    pointer = g_object_get_data(object, "submarket_display_name");
+    if (pointer)
+    {
+        g_clear_pointer(&pointer, g_free);
+    }
+
+    pointer = g_object_get_data(object, "submarket");
+    if (pointer)
+    {
+        g_clear_pointer(&pointer, g_free);
+    }
+
+    pointer = g_object_get_data(object, "symbol_type");
+    if (pointer)
+    {
+        g_clear_pointer(&pointer, g_free);
+    }
+
+    // Clearing the data pointers
+    g_object_set_data(object, "display_name", NULL);
+    g_object_set_data(object, "exchange_name", NULL);
+    g_object_set_data(object, "market_display_name", NULL);
+    g_object_set_data(object, "market", NULL);
+    g_object_set_data(object, "quoted_currency_symbol", NULL);
+    g_object_set_data(object, "spot_age", NULL);
+    g_object_set_data(object, "spot_percentage_change", NULL);
+    g_object_set_data(object, "spot_time", NULL);
+    g_object_set_data(object, "subgroup_display_name", NULL);
+    g_object_set_data(object, "subgroup", NULL);
+    g_object_set_data(object, "submarket_display_name", NULL);
+    g_object_set_data(object, "submarket", NULL);
+    g_object_set_data(object, "symbol_type", NULL);
+
+    g_object_set_data(object, "time", NULL);
+    g_object_set_data(object, "stat", NULL);
+    g_object_set_data(object, "data", NULL);
+    g_object_set_data(object, "price", NULL);
+    g_object_set_data(object, "epoch", NULL);
+    g_object_set_data(object, "home", NULL);
+    g_object_set_data(object, "token", NULL);
 }
 
-void free_candle_history(GListStore *store)
+void free_instrument(GObject *symbol)
+{
+    gpointer pointer = g_object_get_data(symbol, "spot_age");
+    g_clear_pointer(&pointer, g_free);
+    pointer = g_object_get_data(symbol, "spot_percentage_change");
+    g_clear_pointer(&pointer, g_free);
+
+    pointer = g_object_get_data(symbol, "spot_time");
+    g_clear_pointer(&pointer, g_free);
+
+    pointer = g_object_get_data(symbol, "subgroup");
+    g_clear_pointer(&pointer, g_free);
+
+    pointer = g_object_get_data(symbol, "subgroup_display_name");
+    g_clear_pointer(&pointer, g_free);
+
+    pointer = g_object_get_data(symbol, "submarket");
+    g_clear_pointer(&pointer, g_free);
+
+    pointer = g_object_get_data(symbol, "submarket_display_name");
+    g_clear_pointer(&pointer, g_free);
+
+    pointer = g_object_get_data(symbol, "symbol_type");
+    g_clear_pointer(&pointer, g_free);
+
+    pointer = g_object_get_data(symbol, "spot");
+    g_free(pointer);
+
+    g_free(symbol);
+}
+
+void free_candles(GListStore *store)
 {
     GListModel *model = G_LIST_MODEL(store);
-
-    for (guint index = 0; index < g_list_model_get_n_items(model); index++)
+    gint count = g_list_model_get_n_items(model);
+    for (gint index = 0; index < count; index++)
     {
-        gpointer item = g_list_model_get_item(model, index);
-        if (item != NULL)
+        GObject *object = g_list_model_get_item(model, index);
+        gpointer pointer = g_object_get_data(object, "price");
+        g_free(pointer);
+        pointer = g_object_get_data(object, "epoch");
+        if (pointer)
         {
-            g_object_unref(item);
+            g_date_time_unref((GDateTime *)pointer);
         }
     }
-    g_list_store_remove_all(store);
-}
-
-void shutdown(GtkApplication *application, BincData *bincdata)
-{
-    g_free(bincdata->account[0]->token);
-    g_free(bincdata->account[1]->token);
-    g_free(bincdata->account[2]->token);
-    free(bincdata->account[0]);
-    free(bincdata->account[1]);
-    free(bincdata->account[2]);
-
-    free_instrument(bincdata->instrument);
-    free_favourite_list(gtk_drop_down_get_model(bincdata->symbolbox));
-    free(bincdata->time);
-    free(bincdata->data);
-    free(bincdata->rectangle);
-    g_object_unref(bincdata->store);
-    free(bincdata->home);
-    g_object_unref(bincdata->connection);
-    g_object_unref(bincdata->task);
-    // free(bincdata);
-
-    g_object_unref(bincdata);
-    g_object_unref(application);
-}
-
-void close_request(GtkWindow *window, BincData *bincdata)
-{
-    glDeleteProgram(bincdata->data->program);
-    gtk_window_destroy(bincdata->window);
 }

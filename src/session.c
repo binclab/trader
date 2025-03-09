@@ -1,60 +1,105 @@
 #include "session.h"
-#include "cleanup.h"
 
-void get_candle_history(JsonArray *array, guint length, BincData *bincdata)
+const SecretSchema *get_token_schema(void) {
+    static const SecretSchema schema = {
+        "com.binclab.Trader",
+        SECRET_SCHEMA_NONE,
+        {{"account", SECRET_SCHEMA_ATTRIBUTE_STRING},
+         {"currency", SECRET_SCHEMA_ATTRIBUTE_STRING},
+         {NULL, 0}}};
+    return &schema;
+};
+
+static void store_token_result(GObject *source, GAsyncResult *result, gpointer userdata)
 {
-    double highest = 0;
-    double lowest = 0;
-    size_t skip = bincdata->count - length;
-
-    for (size_t index = 0; index < bincdata->count; index++)
+    GError *error = NULL;
+    secret_password_store_finish(result, &error);
+    if (error)
     {
-        BincCandle *candle;
-        if (index >= skip)
+        g_printerr("Failed to store token: %s\n", error->message);
+        g_error_free(error);
+    }
+
+    g_clear_pointer(&userdata, g_free);
+}
+
+void load_changed(WebKitWebView *webview, WebKitLoadEvent event, gpointer userdata)
+{
+    GObject *task = G_OBJECT(userdata);
+    switch (event)
+    {
+    case WEBKIT_LOAD_STARTED:
+        break;
+    case WEBKIT_LOAD_REDIRECTED:
+        const gchar *url = webkit_web_view_get_uri(webview);
+        GListStore *profile = G_LIST_STORE(g_object_get_data(task, "profile"));
+        if (g_strstr_len(url, -1, "https://www.binclab.com/deriv?"))
         {
-            JsonObject *object = json_node_get_object(json_array_get_element(array, index - skip));
-
-            candle = g_object_new(BINC_TYPE_CANDLE, NULL);
-            candle->data = bincdata->data;
-            candle->time = bincdata->time;
-            candle->stat = bincdata->stat;
-
-            candle->price->close = json_object_get_double_member(object, "close");
-            candle->price->epoch = json_object_get_int_member(object, "epoch");
-            candle->price->high = json_object_get_double_member(object, "high");
-            candle->price->low = json_object_get_double_member(object, "low");
-            candle->price->open = json_object_get_double_member(object, "open");
-            json_object_unref(object);
-
-            g_list_store_append(bincdata->store, candle);
-            if (index == bincdata->count - 1)
+            gchar **result = g_strsplit(g_strrstr(url, "acct") + 4, "=", 0);
+            gchar *endptr;
+            gint count = g_strtod(result[0], &endptr);
+            g_strfreev(result);
+            result = g_strsplit(g_strstr_len(url, -1, "acct1"), "&", 0);
+            for (gint index = 0; index < count; index++)
             {
-                bincdata->price = candle->price;
+                gint position = index * 3;
+                gchar *account = g_strdup(g_strrstr(result[position], "=") + 1);
+                gchar *token = g_strdup(g_strrstr(result[position + 1], "=") + 1);
+                gchar *currency = g_strdup(g_strrstr(result[position + 2], "=") + 1);
+                GObject *object = G_OBJECT(gtk_string_object_new(account));
+                g_object_set_data(object, "token", token);
+                g_object_set_data(object, "currency", currency);
+                g_list_store_append(profile, object);
+
+                secret_password_store(get_token_schema(), SECRET_COLLECTION_DEFAULT,
+                                      "Binc Trader Token", token, NULL,
+                                      store_token_result, account,
+                                      "account", account,
+                                      "currency", currency,
+                                      NULL);
             }
+            g_strfreev(result);
+            g_task_run_in_thread(G_TASK(task), save_token_attributes);
+            present_actual_child(task);
         }
-        else
-            candle = g_list_model_get_item((GListModel *)bincdata->store, index);
-
-        if (highest < candle->price->high)
-            highest = candle->price->high;
-        if ((candle->price->low < lowest) || (lowest == 0))
-            lowest = candle->price->low;
-
-        if (index == bincdata->count - 1)
-        {
-            highest = highest;
-            lowest = lowest;
-            bincdata->stat->range = highest - lowest;
-            bincdata->stat->highest = highest;
-            bincdata->stat->lowest = lowest;
-            bincdata->stat->baseline = lowest + bincdata->stat->range / 2;
-            bincdata->stat->scale = 2 / bincdata->stat->range;
-            // bincdata->stat->scale = 0.25 / bincdata->stat->range;
-        }
+        //}
+        break;
+    case WEBKIT_LOAD_COMMITTED:
+        break;
+    case WEBKIT_LOAD_FINISHED:
+        break;
     }
 }
 
-gchar *request_active_symbols()
+
+static gchar *request_tick_history(const gchar *symbol, gint size)
+{
+    JsonNode *node = json_node_new(JSON_NODE_OBJECT);
+    JsonObject *object = json_object_new();
+
+    json_object_set_string_member(object, "ticks_history", symbol);
+    json_object_set_int_member(object, "adjust_start_time", 1);
+    json_object_set_int_member(object, "count", size);
+    json_object_set_string_member(object, "end", "latest");
+    json_object_set_string_member(object, "style", "candles");
+    json_object_set_int_member(object, "granularity", 60);
+    json_object_set_int_member(object, "start", 1);
+    json_object_set_int_member(object, "subscribe", 1);
+
+    json_node_init(node, JSON_NODE_OBJECT);
+    json_node_take_object(node, object);
+
+    JsonGenerator *generator = json_generator_new();
+    json_generator_set_root(generator, node);
+
+    gchar *instruction = json_generator_to_data(generator, NULL);
+
+    g_object_unref(generator);
+
+    return instruction;
+}
+
+static gchar *request_active_symbols()
 {
     JsonNode *root = json_node_new(JSON_NODE_OBJECT);
     JsonObject *object = json_object_new();
@@ -70,257 +115,76 @@ gchar *request_active_symbols()
     return json_generator_to_data(generator, NULL);
 }
 
-gchar *request_ping()
+static void process_candle_history(JsonArray *array, guint length, GObject *task)
 {
-    JsonNode *root = json_node_new(JSON_NODE_OBJECT);
-    JsonObject *object = json_object_new();
+    double highest = 0;
+    double lowest = 0;
 
-    json_object_set_int_member(object, "ping", 1);
+    GListStore *store = g_object_get_data(task, "candles");
+    gint skip = g_list_model_get_n_items(G_LIST_MODEL(store));
 
-    json_node_init(root, JSON_NODE_OBJECT);
-    json_node_take_object(root, object);
-
-    JsonGenerator *generator = json_generator_new();
-    json_generator_set_root(generator, root);
-
-    return json_generator_to_data(generator, NULL);
-}
-
-gchar *request_subscription(gchar *symbol)
-{
-
-    /*JsonNode *root = json_node_new(JSON_NODE_OBJECT);
-    JsonObject *object = json_object_new();
-
-    json_object_set_string_member(object, "ticks", symbol);
-    json_object_set_int_member(object, "subscribe", 1);
-
-    json_node_init(root, JSON_NODE_OBJECT);
-    json_node_take_object(root, object);
-
-    JsonGenerator *generator = json_generator_new();
-    json_generator_set_root(generator, root);*/
-
-    JsonNode *root = json_node_new(JSON_NODE_OBJECT);
-    JsonObject *object = json_object_new();
-
-    json_object_set_string_member(object, "ticks_history", symbol);
-    json_object_set_int_member(object, "adjust_start_time", 1);
-    json_object_set_int_member(object, "count", 1);
-    json_object_set_string_member(object, "end", "latest");
-    json_object_set_string_member(object, "style", "candles");
-    json_object_set_int_member(object, "granularity", 60);
-    json_object_set_int_member(object, "start", 1);
-    json_object_set_int_member(object, "subscribe", 1);
-
-    json_node_init(root, JSON_NODE_OBJECT);
-    json_node_take_object(root, object);
-
-    JsonGenerator *generator = json_generator_new();
-    json_generator_set_root(generator, root);
-
-    return json_generator_to_data(generator, NULL);
-}
-
-gchar *request_login()
-{
-    JsonNode *root = json_node_new(JSON_NODE_OBJECT);
-    JsonObject *object = json_object_new();
-    JsonArray *array = json_array_new();
-
-    json_array_add_string_element(array, "read");
-    json_array_add_string_element(array, "trade");
-
-    json_object_set_int_member(object, "api_token", 1);
-    json_object_set_string_member(object, "new_token", "Login");
-    json_object_set_array_member(object, "new_token_scopes", array);
-
-    json_node_init(root, JSON_NODE_OBJECT);
-    json_node_take_object(root, object);
-
-    JsonGenerator *generator = json_generator_new();
-    json_generator_set_root(generator, root);
-
-    return json_generator_to_data(generator, NULL);
-}
-
-gchar *request_last_candle(gchar *symbol)
-{
-
-    JsonNode *root = json_node_new(JSON_NODE_OBJECT);
-    JsonObject *object = json_object_new();
-
-    json_object_set_string_member(object, "ticks_history", symbol);
-    json_object_set_int_member(object, "adjust_start_time", 1);
-    json_object_set_int_member(object, "count", 2);
-    json_object_set_string_member(object, "end", "2");
-    json_object_set_string_member(object, "style", "candles");
-    json_object_set_int_member(object, "start", 2);
-
-    json_node_init(root, JSON_NODE_OBJECT);
-    json_node_take_object(root, object);
-
-    JsonGenerator *generator = json_generator_new();
-    json_generator_set_root(generator, root);
-
-    return json_generator_to_data(generator, NULL);
-}
-
-gchar *request_tick_history(gchar *symbol, int size)
-{
-    JsonNode *root = json_node_new(JSON_NODE_OBJECT);
-    JsonObject *object = json_object_new();
-
-    json_object_set_string_member(object, "ticks_history", symbol);
-    json_object_set_int_member(object, "adjust_start_time", 1);
-    json_object_set_int_member(object, "count", size);
-    json_object_set_string_member(object, "end", "latest");
-    json_object_set_string_member(object, "style", "candles");
-    json_object_set_int_member(object, "granularity", 60);
-    json_object_set_int_member(object, "start", 1);
-    json_object_set_int_member(object, "subscribe", 1);
-
-    json_node_init(root, JSON_NODE_OBJECT);
-    json_node_take_object(root, object);
-
-    JsonGenerator *generator = json_generator_new();
-    json_generator_set_root(generator, root);
-
-    return json_generator_to_data(generator, NULL);
-}
-
-gchar *request_time()
-{
-    JsonNode *root = json_node_new(JSON_NODE_OBJECT);
-    JsonObject *object = json_object_new();
-    json_object_set_int_member(object, "time", 1);
-    json_node_init(root, JSON_NODE_OBJECT);
-    json_node_take_object(root, object);
-
-    JsonGenerator *generator = json_generator_new();
-    json_generator_set_root(generator, root);
-
-    return json_generator_to_data(generator, NULL);
-}
-
-BincTick *get_tick(gchar *data, gssize size)
-{
-    JsonParser *parser = json_parser_new();
-    GError *error = NULL;
-    if (!json_parser_load_from_data(parser, data, size, &error))
+    for (size_t index = 0; index < 1440; index++)
     {
-        g_printerr("Unable to parse JSON: %s\n", error->message);
-        g_error_free(error);
-        g_object_unref(parser);
-        return NULL;
-    }
-    else
-    {
-        JsonObject *object = json_node_get_object(json_parser_get_root(parser));
-        JsonObject *tickObject = json_object_get_object_member(object, "tick");
-        BincTick *tick = g_new0(BincTick, 1);
-        tick->ask = json_object_get_double_member(tickObject, "ask");
-        tick->bid = json_object_get_double_member(tickObject, "bid");
-        tick->epoch = json_object_get_int_member(tickObject, "epoch");
-        tick->id = json_object_get_string_member(tickObject, "id");
-        tick->pip_size = json_object_get_int_member(tickObject, "pip_size");
-        tick->quote = json_object_get_double_member(tickObject, "quote");
-        tick->symbol = json_object_get_string_member(tickObject, "symbol");
-        return tick;
-    }
-}
-
-void update_candle(BincData *bincdata, JsonObject *object)
-{
-    gint64 epoch = json_object_get_int_member(object, "epoch");
-    GDateTime *current_time = g_date_time_new_from_unix_utc(epoch);
-
-    if (g_date_time_get_second(current_time) == 0)
-    {
-        BincCandle *candle = g_object_new(BINC_TYPE_CANDLE, NULL);
-        candle->data = bincdata->data;
-        candle->time = bincdata->time;
-        candle->stat = bincdata->stat;
-        gchar *endptr;
-        candle->price->high = g_strtod(json_object_get_string_member(object, "high"), &endptr);
-        candle->price->low = g_strtod(json_object_get_string_member(object, "low"), &endptr);
-        candle->price->open = g_strtod(json_object_get_string_member(object, "open"), &endptr);
-        candle->price->close = g_strtod(json_object_get_string_member(object, "close"), &endptr);
-        candle->price->epoch = epoch;
-
-        const gchar *instruction = request_last_candle(bincdata->instrument->symbol);
-        soup_websocket_connection_send_text(bincdata->connection, instruction);
-        add_candle(bincdata, candle, TRUE);
-        // gtk_fixed_put(fixed, bincdata->widget, 0, 0);
-        // bincdata->widget = create_canvas(candle);
-        // gtk_box_append(bincdata->data->chart, bincdata->widget);
-        // gtk_fixed_put(candle->data->fixed, bincdata->widget, candle->data->abscissa, candle->price->close - candle->data->baseline);
-        // candle->data->abscissa += CANDLE_WIDTH;
-        gtk_range_set_value(bincdata->data->scale, candle->price->close);
-        // gtk_viewport_scroll_to(bincdata->timeport, bincdata->timegravity, bincdata->scrollinfo);
-        // gtk_adjustment_set_value(bincdata->adjustment, gtk_adjustment_get_upper(bincdata->adjustment));
-        gtk_widget_grab_focus(bincdata->timegravity);
-    }
-    if (bincdata->widget != NULL && GTK_IS_WIDGET(bincdata->widget))
-    {
-        gchar *endptr;
-        bincdata->price->high = g_strtod(json_object_get_string_member(object, "high"), &endptr);
-        bincdata->price->low = g_strtod(json_object_get_string_member(object, "low"), &endptr);
-        bincdata->price->open = g_strtod(json_object_get_string_member(object, "open"), &endptr);
-        bincdata->price->close = g_strtod(json_object_get_string_member(object, "close"), &endptr);
-        bincdata->price->epoch = epoch;
-        gtk_range_set_value(bincdata->data->scale, bincdata->price->close);
-        // gtk_paned_set_position(bincdata->data->paned, 12 * (bincdata->stat->lowest - bincdata->price->close));
-        gtk_gl_area_queue_render(GTK_GL_AREA(bincdata->widget));
-        gtk_gl_area_queue_render(bincdata->pointer);
-        gtk_gl_area_queue_render(bincdata->cartesian);
-
-        double close_value = bincdata->price->close;
-
-        gchar *buffer = g_strdup_printf("%.*f", bincdata->instrument->pip, close_value);
-        if (bincdata->scalelabel != NULL)
-            gtk_label_set_text(bincdata->scalelabel, buffer);
-        g_free(buffer);
-
-        /*if (close_value >= (bincdata->data->maximum - bincdata->data->space))
+        GObject *candle;
+        if (index >= skip)
         {
-            int count = (int)ceil((close_value - bincdata->data->maximum) / bincdata->data->space);
-            for (int index = 0; index < count; index++)
-            {
-                // height += MARKER_HEIGHT;
-                // gtk_widget_set_size_request((GtkWidget *)range, width, height);
-                // bincdata->data->upper += bincdata->data->space;
-                // buffer = g_strdup_printf("%.3f", bincdata->data->upper);
-                // gtk_scale_add_mark((GtkScale *)range, bincdata->data->upper, GTK_POS_BOTTOM, buffer);
-                create_scale(bincdata->data, index, TRUE);
-                // g_free(buffer);
-            }
+            JsonObject *object = json_node_get_object(json_array_get_element(array, index - skip));
 
-            // gtk_adjustment_set_upper(adjustment, bincdata->data->upper);
+            candle = g_object_new(G_TYPE_OBJECT, NULL);
+            GDateTime *epoch = g_date_time_new_from_unix_utc(json_object_get_int_member(object, "epoch"));
+            gdouble *price = g_new(gdouble, 4);
+            price[0] = json_object_get_double_member(object, "open");
+            price[1] = json_object_get_double_member(object, "close");
+            price[2] = json_object_get_double_member(object, "high");
+            price[3] = json_object_get_double_member(object, "low");
+
+            g_object_set_data(candle, "price", price);
+            g_object_set_data(candle, "epoch", epoch);
+            g_object_set_data(candle, "stat", g_object_get_data(task, "stat"));
+            g_object_set_data(candle, "data", g_object_get_data(task, "data"));
+            g_object_set_data(candle, "time", g_object_get_data(task, "time"));
+
+            json_object_unref(object);
+
+            g_list_store_append(store, candle);
         }
-        else if (close_value <= (bincdata->data->minimum + bincdata->data->space))
+        else
         {
-            int count = (int)floor((bincdata->data->minimum - close_value) / bincdata->data->space);
-            for (int index = 0; index < count; index++)
-            {
-                // height += MARKER_HEIGHT;
-                // gtk_widget_set_size_request((GtkWidget *)range, width, height);
-                // bincdata->data->lower -= bincdata->data->space;
-                // buffer = g_strdup_printf("%.3f", bincdata->data->lower);
-                // gtk_scale_add_mark((GtkScale *)range, bincdata->data->lower, GTK_POS_BOTTOM, buffer);
-                create_scale(bincdata->data, index, FALSE);
-                // g_free(buffer);
-            }
-            // gtk_adjustment_set_lower(adjustment, bincdata->data->lower);
-        }*/
-    }
+            candle = g_list_model_get_item(G_LIST_MODEL(store), index);
+        }
 
-    g_date_time_unref(current_time);
+        gdouble *price = (gdouble *)g_object_get_data(candle, "price");
+
+        if (highest < price[2])
+            highest = price[2];
+
+        if ((price[3] < lowest) || (lowest == 0))
+            lowest = price[3];
+
+        if (index == 1439)
+        {
+            highest = highest;
+            lowest = lowest;
+
+            gdouble *stat = g_object_get_data(task, "stat");
+            g_object_set_data(task, "price", price);
+            stat[0] = highest - lowest;
+            stat[1] = highest;
+            stat[2] = lowest;
+            stat[3] = lowest + stat[0] / 2;
+            stat[4] = 2 / stat[0];
+            // bincdata->stat->scale = 0.25 / bincdata->stat->range;
+        }
+    }
 }
 
-static void handle_socket_response(JsonObject *object, const gchar *type, BincData *bincdata)
+static void create_chart(GObject *task)
 {
-    // GDateTime *date = g_date_time_new_now_utc();
+}
+
+static void handle_socket_response(JsonObject *object, const gchar *type, GTask *task)
+{
+    GObject *pointer = G_OBJECT(task);
     if (g_str_equal("candles", type))
     {
         JsonArray *array = json_object_get_array_member(object, "candles");
@@ -333,7 +197,7 @@ static void handle_socket_response(JsonObject *object, const gchar *type, BincDa
         if ((gint)g_strtod(end, &endptr) == length && length == start && start == count)
         {
             JsonObject *current = json_array_get_object_element(array, 0);
-            GtkGLArea *area = g_object_get_data(G_OBJECT(bincdata->widget), "area");
+            /*GtkGLArea *area = g_object_get_data(G_OBJECT(bincdata->widget), "area");
             BincCandle *candle = g_object_get_data(G_OBJECT(area), "candle");
             candle->price->close = json_object_get_double_member(current, "close");
             candle->price->epoch = json_object_get_int_member(current, "epoch");
@@ -344,29 +208,29 @@ static void handle_socket_response(JsonObject *object, const gchar *type, BincDa
             gtk_gl_area_queue_render(area);
             bincdata->count = 1;
             g_list_store_append(bincdata->store, candle);
-            g_task_run_in_thread(bincdata->task, save_history);
+            g_task_run_in_thread(bincdata->task, save_history);*/
+
+            /*AccountProfile **profile = (AccountProfile *)g_object_get_data(task, "profile");
+            BincSymbol *instrument = (BincSymbol *)g_object_get_data(task, "symbol");*/
         }
         else
         {
-            get_candle_history(array, length, bincdata);
-            g_task_run_in_thread(bincdata->task, save_history);
-            create_chart(bincdata);
+            process_candle_history(array, length, pointer);
+            g_task_set_task_data(task, GINT_TO_POINTER(length), NULL);
+            g_task_run_in_thread(task, save_history);
+            create_chart(pointer);
         }
     }
-    else if (strcmp("ohlc", type) == 0)
+    else if (g_str_equal("ohlc", type))
     {
-        update_candle(bincdata, json_object_get_object_member(object, "ohlc"));
+        // update_candle(bincdata, json_object_get_object_member(object, "ohlc"));
     }
-    else if (strcmp("time", type) == 0)
+    else if (g_str_equal("time", type))
     {
-        time_t raw_time;
-        time(&raw_time);
-        double time_difference = (raw_time - json_object_get_int_member(object, "time")) / 60;
-        printf("Time Difference: %.2f\n", time_difference);
     }
-    else if (strcmp("active_symbols", type) == 0)
+    else if (g_str_equal("active_symbols", type))
     {
-        update_active_symbols(bincdata, json_object_get_array_member(object, "active_symbols"));
+        update_active_symbols(pointer, json_object_get_array_member(object, "active_symbols"));
         // setup_instrument(bincdata);
         /*if (window->model->instrument == NULL)
         {
@@ -374,13 +238,9 @@ static void handle_socket_response(JsonObject *object, const gchar *type, BincDa
             // window->model->instrument = restore_last_instrument(window->home);
         }*/
     }
-
-    else
-        g_print("Received message: %s\n", type);
-    // g_date_time_unref(date);
 }
 
-static void on_message(SoupWebsocketConnection *connection, SoupWebsocketDataType type, GBytes *message, BincData *bincdata)
+static void message(SoupWebsocketConnection *connection, SoupWebsocketDataType type, GBytes *message, gpointer userdata)
 {
     if (type == SOUP_WEBSOCKET_DATA_TEXT)
     {
@@ -398,7 +258,7 @@ static void on_message(SoupWebsocketConnection *connection, SoupWebsocketDataTyp
         {
             JsonObject *object = json_node_get_object(json_parser_get_root(parser));
             const gchar *type = json_object_get_string_member(object, "msg_type");
-            handle_socket_response(object, type, bincdata);
+            handle_socket_response(object, type, G_TASK(userdata));
         }
     }
     else
@@ -412,32 +272,21 @@ static void on_message(SoupWebsocketConnection *connection, SoupWebsocketDataTyp
     //     gtk_label_set_text(window->infolabel, buffer);
 }
 
-void on_closed(SoupWebsocketConnection *connection, BincData *bincdata)
+static void closed(SoupWebsocketConnection *connection, gpointer *userdata)
 {
-    const gchar *reason = soup_websocket_connection_get_close_data(connection);
-    if (reason && g_str_equal(reason, "Symbol Change"))
+    gpointer pointer = g_object_get_data(G_OBJECT(userdata), "connection");
+    if (pointer)
     {
-        GListModel *model = G_LIST_MODEL(bincdata->data->labels);
-        for (gint index = 0; index < g_list_model_get_n_items(model); index++)
-        {
-           GtkLabel *label = g_list_model_get_item(model, index);
-           gtk_label_set_text(label, "");
-        }
-        
-        free_model(G_OBJECT(bincdata->data->box));
-        free_model(G_OBJECT(bincdata->data->chart));
-        free_candle_history(bincdata->store);
-        g_task_run_in_thread(bincdata->task, setup_soup_session);
+        g_object_unref(pointer);
     }
-    g_object_unref(connection);
-    // gtk_toggle_button_set_active(bincdata->led, FALSE);
 }
 
-static void on_websocket_connected(SoupSession *session, GAsyncResult *result, BincData *bincdata)
+void connected(GObject *object, GAsyncResult *result, gpointer userdata)
 {
+    GObject *task = G_OBJECT(userdata);
+    SoupSession *session = SOUP_SESSION(object);
     GError *error = NULL;
-
-    bincdata->connection = soup_session_websocket_connect_finish(session, result, &error);
+    SoupWebsocketConnection *connection = soup_session_websocket_connect_finish(session, result, &error);
 
     if (error)
     {
@@ -446,46 +295,28 @@ static void on_websocket_connected(SoupSession *session, GAsyncResult *result, B
         return;
     }
 
-    // gtk_toggle_button_set_active(object->led, TRUE);
-
-    g_signal_connect(bincdata->connection, "message", (GCallback)on_message, bincdata);
-    g_signal_connect(bincdata->connection, "closed", (GCallback)on_closed, bincdata);
-
-    if (bincdata->profile->token == NULL)
+    if (!g_object_get_data(task, "connection"))
     {
-        soup_websocket_connection_send_text(bincdata->connection, request_active_symbols());
+        g_object_set_data(task, "connection", connection);
     }
-    else
-    {
-        restore_last_instrument(bincdata);
-        gint candles = restore_candles(bincdata);
 
-        if (candles > 0)
-        {
-            gchar *instruction = request_tick_history(bincdata->instrument->symbol, candles);
-            soup_websocket_connection_send_text(bincdata->connection, instruction);
-        }
-    }
-}
+    gpointer pointer = g_object_get_data(task, "symbol");
 
-void setup_soup_session(GTask *task, gpointer source, gpointer data, GCancellable *unused)
-{
-    BincData *bincdata = (BincData *)data;
-    SoupSession *session = soup_session_new();
-    const char *uri = "wss://ws.derivws.com/websockets/v3?app_id=66477";
-    SoupMessage *message = soup_message_new(SOUP_METHOD_GET, uri);
-    if (bincdata->profile->token != NULL)
+    if (g_object_get_data(task, "fetch"))
     {
-        int maxlength = 8 + strlen(bincdata->profile->token);
-        char *bearer = (char *)malloc(maxlength);
-        snprintf(bearer, maxlength, "Bearer %s", bincdata->profile->token);
-        SoupMessageHeaders *headers = soup_message_get_request_headers(message);
-        soup_message_headers_append(headers, "Authorization", bearer);
-        free(bearer);
+        gchar *instruction = request_active_symbols();
+        soup_websocket_connection_send_text(connection, instruction);
     }
-    soup_session_websocket_connect_async(
-        session, message, NULL, NULL, G_PRIORITY_HIGH, NULL,
-        (GAsyncReadyCallback)on_websocket_connected, bincdata);
-    g_object_unref(message);
-    g_object_unref(session);
+    else if (pointer)
+    {
+        const gchar *symbol = gtk_string_object_get_string(GTK_STRING_OBJECT(pointer));
+        pointer = g_object_get_data(task, "timeframe");
+        const gchar *timeframe = gtk_string_object_get_string(GTK_STRING_OBJECT(pointer));
+        gint count = get_saved_candles(task, symbol, timeframe);
+        gchar *instruction = request_tick_history(symbol, count);
+        soup_websocket_connection_send_text(connection, instruction);
+    }
+
+    g_signal_connect(connection, "message", G_CALLBACK(message), userdata);
+    g_signal_connect(connection, "closed", G_CALLBACK(closed), userdata);
 }

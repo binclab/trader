@@ -30,7 +30,8 @@
         "gl.h": "c",
         "database.h": "c",
         "string.h": "c",
-        "cleanup.h": "c"
+        "cleanup.h": "c",
+        "sqlite3.h": "c"
     },
     "C_Cpp.default.compileCommands": "/home/binclab/trader/.build/compile_commands.json",
     "C_Cpp.default.configurationProvider": "mesonbuild.mesonbuild",
