@@ -2,9 +2,9 @@
 #include "session.h"
 #include "cleanup.h"
 
-gint get_saved_candles(GObject *task, const gchar *symbol, const gchar *timeframe)
+gint get_saved_candles(GObject *object, const gchar *symbol, const gchar *timeframe)
 {
-    const gchar *home = g_object_get_data(task, "home");
+    const gchar *home = gtk_string_object_get_string(GTK_STRING_OBJECT(object));
     gsize maxlength = strlen(home) + strlen(symbol) + 12;
     gchar *path = (gchar *)g_malloc0(maxlength);
     g_snprintf(path, maxlength, "%shistory/%s.db", home, symbol);
@@ -42,30 +42,32 @@ gint get_saved_candles(GObject *task, const gchar *symbol, const gchar *timefram
             sqlite3_prepare_v2(database, instruction, -1, &stmt, NULL);
             g_clear_pointer(&instruction, g_free);
             sqlite3_step(stmt);
-            GListStore *store = g_object_get_data(task, "candles");
+            GListStore *store = g_object_get_data(object, "candles");
             for (guint index = 0; index < count; index++)
             {
-                GObject *object = g_object_new(G_TYPE_OBJECT, NULL);
+                GObject *candle = g_object_new(G_TYPE_OBJECT, NULL);
                 GDateTime *epoch = g_date_time_new_from_unix_utc(sqlite3_column_int64(stmt, 0));
                 gdouble *price = g_new(gdouble, 4);
                 price[0] = sqlite3_column_double(stmt, 1);
                 price[1] = sqlite3_column_double(stmt, 2);
                 price[2] = sqlite3_column_double(stmt, 3);
                 price[3] = sqlite3_column_double(stmt, 4);
-                g_object_set_data(object, "price", price);
-                g_object_set_data(object, "epoch", epoch);
-                g_object_set_data(object, "stat", g_object_get_data(task, "stat"));
-                g_object_set_data(object, "data", g_object_get_data(task, "data"));
-                g_object_set_data(object, "time", g_object_get_data(task, "time"));
-                g_list_store_append(store, object);
+                g_object_set_data(candle, "price", price);
+                g_object_set_data(candle, "epoch", epoch);
+                g_object_set_data(candle, "stat", g_object_get_data(object, "stat"));
+                g_object_set_data(candle, "data", g_object_get_data(object, "data"));
+                g_object_set_data(candle, "time", g_object_get_data(object, "time"));
+                g_list_store_append(store, candle);
             }
+            sqlite3_finalize(stmt);
         }
         else
         {
             fetch = 1440;
         }
     }
-    sqlite3_finalize(stmt);
+    else
+        sqlite3_finalize(stmt);
     return fetch;
 }
 
@@ -171,13 +173,13 @@ void setup_symbol(GObject *task, sqlite3 *database)
     g_object_set_data(task, "symbol", symbol);
 }
 
-void save_history(GTask *handler, gpointer source, gpointer userdata, GCancellable *unused)
+void save_history(GTask *task, gpointer source, gpointer userdata, GCancellable *unused)
 {
-    GObject *task = G_OBJECT(handler);
-    gpointer pointer = g_object_get_data(task, "symbol");
+    GObject *object = G_OBJECT(source);
+    gpointer pointer = g_object_get_data(object, "symbol");
     const gchar *symbol = gtk_string_object_get_string(GTK_STRING_OBJECT(pointer));
-    pointer = g_object_get_data(task, "timeframe");
-    const gchar *home = g_object_get_data(task, "home");
+    pointer = g_object_get_data(object, "timeframe");
+    const gchar *home = gtk_string_object_get_string(GTK_STRING_OBJECT(object));
     const gchar *timeframe = gtk_string_object_get_string(GTK_STRING_OBJECT(pointer));
     gsize maxlength = strlen(home) + strlen(symbol) + 12;
     gchar *path = (gchar *)g_malloc0(maxlength);
@@ -201,7 +203,7 @@ void save_history(GTask *handler, gpointer source, gpointer userdata, GCancellab
     sqlite3_prepare_v2(database, sql_insert, -1, &stmt, NULL);
     g_clear_pointer(&sql_insert, g_free);
 
-    GListModel *model = G_LIST_MODEL(g_object_get_data(task, "candles"));
+    GListModel *model = G_LIST_MODEL(g_object_get_data(object, "candles"));
     gint count = g_list_model_get_n_items(model);
 
     gint start = count - GPOINTER_TO_INT(userdata);
@@ -221,9 +223,9 @@ void save_history(GTask *handler, gpointer source, gpointer userdata, GCancellab
     sqlite3_finalize(stmt);
 }
 
-void update_active_symbols(GObject *task, JsonArray *list)
+void update_active_symbols(GObject *object, JsonArray *list)
 {
-    const gchar *home = g_object_get_data(task, "home");
+    const gchar *home = gtk_string_object_get_string(GTK_STRING_OBJECT(object));
     gsize maxlength = strlen(home) + 11;
     gchar *path = (gchar *)g_malloc0(maxlength);
     g_snprintf(path, maxlength, "%ssession.db", home);
@@ -245,37 +247,37 @@ void update_active_symbols(GObject *task, JsonArray *list)
 
     for (gint index = 0; index < json_array_get_length(list); index++)
     {
-        JsonObject *object = json_array_get_object_element(list, index);
+        JsonObject *element = json_array_get_object_element(list, index);
         sqlite3_prepare_v2(database, sql_insert, -1, &stmt, NULL);
 
-        sqlite3_bind_text(stmt, 1, json_object_get_string_member(object, "symbol"), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_text(stmt, 2, json_object_get_string_member(object, "display_name"), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_int(stmt, 3, json_object_get_int_member(object, "allow_forward_starting"));
-        sqlite3_bind_int(stmt, 4, json_object_get_int_member(object, "delay_amount"));
-        sqlite3_bind_int(stmt, 5, json_object_get_int_member(object, "display_order"));
-        sqlite3_bind_int(stmt, 6, json_object_get_int_member(object, "exchange_is_open"));
-        sqlite3_bind_text(stmt, 7, json_object_get_string_member(object, "exchange_name"), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_int(stmt, 8, json_object_get_int_member(object, "intraday_interval_minutes"));
-        sqlite3_bind_int(stmt, 9, json_object_get_int_member(object, "is_trading_suspended"));
-        sqlite3_bind_text(stmt, 10, json_object_get_string_member(object, "market"), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_text(stmt, 11, json_object_get_string_member(object, "market_display_name"), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_double(stmt, 12, json_object_get_double_member(object, "pip"));
-        sqlite3_bind_text(stmt, 13, json_object_get_string_member(object, "quoted_currency_symbol"), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_double(stmt, 14, json_object_get_double_member(object, "spot"));
-        sqlite3_bind_text(stmt, 15, json_object_get_string_member(object, "spot_age"), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_text(stmt, 16, json_object_get_string_member(object, "spot_percentage_change"), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_text(stmt, 17, json_object_get_string_member(object, "spot_time"), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_text(stmt, 18, json_object_get_string_member(object, "subgroup"), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_text(stmt, 19, json_object_get_string_member(object, "subgroup_display_name"), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_text(stmt, 20, json_object_get_string_member(object, "submarket"), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_text(stmt, 21, json_object_get_string_member(object, "submarket_display_name"), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_text(stmt, 22, json_object_get_string_member(object, "symbol_type"), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, 1, json_object_get_string_member(element, "symbol"), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, 2, json_object_get_string_member(element, "display_name"), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_int(stmt, 3, json_object_get_int_member(element, "allow_forward_starting"));
+        sqlite3_bind_int(stmt, 4, json_object_get_int_member(element, "delay_amount"));
+        sqlite3_bind_int(stmt, 5, json_object_get_int_member(element, "display_order"));
+        sqlite3_bind_int(stmt, 6, json_object_get_int_member(element, "exchange_is_open"));
+        sqlite3_bind_text(stmt, 7, json_object_get_string_member(element, "exchange_name"), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_int(stmt, 8, json_object_get_int_member(element, "intraday_interval_minutes"));
+        sqlite3_bind_int(stmt, 9, json_object_get_int_member(element, "is_trading_suspended"));
+        sqlite3_bind_text(stmt, 10, json_object_get_string_member(element, "market"), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, 11, json_object_get_string_member(element, "market_display_name"), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_double(stmt, 12, json_object_get_double_member(element, "pip"));
+        sqlite3_bind_text(stmt, 13, json_object_get_string_member(element, "quoted_currency_symbol"), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_double(stmt, 14, json_object_get_double_member(element, "spot"));
+        sqlite3_bind_text(stmt, 15, json_object_get_string_member(element, "spot_age"), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, 16, json_object_get_string_member(element, "spot_percentage_change"), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, 17, json_object_get_string_member(element, "spot_time"), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, 18, json_object_get_string_member(element, "subgroup"), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, 19, json_object_get_string_member(element, "subgroup_display_name"), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, 20, json_object_get_string_member(element, "submarket"), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, 21, json_object_get_string_member(element, "submarket_display_name"), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, 22, json_object_get_string_member(element, "symbol_type"), -1, SQLITE_TRANSIENT);
         sqlite3_step(stmt);
         sqlite3_finalize(stmt);
     }
 
     sqlite3_exec(database, "COMMIT;", NULL, NULL, NULL);
-    setup_symbol(task, database);
+    setup_symbol(object, database);
     sqlite3_close(database);
 }
 
@@ -348,7 +350,7 @@ static void create_default_tables(sqlite3 *database)
 
 void save_token_attributes(GTask *task, gpointer source, gpointer userdata, GCancellable *unused)
 {
-    gchar *home = g_object_get_data(G_OBJECT(task), "home");
+    const gchar *home = gtk_string_object_get_string(GTK_STRING_OBJECT(source));
     gsize maxlength = strlen(home) + 11;
     gchar *path = (gchar *)g_malloc0(maxlength);
     g_snprintf(path, maxlength, "%ssession.db", home);
@@ -356,7 +358,7 @@ void save_token_attributes(GTask *task, gpointer source, gpointer userdata, GCan
     sqlite3_open(path, &database);
     g_clear_pointer(&path, g_free);
     const gchar *sql = "INSERT OR IGNORE INTO Accounts (account, currency) VALUES (?, ?);";
-    GListModel *profile = G_LIST_MODEL(g_object_get_data(G_OBJECT(task), "profile"));
+    GListModel *profile = G_LIST_MODEL(userdata);
 
     sqlite3_stmt *stmt;
     for (gint index = 0; index < g_list_model_get_n_items(profile); index++)
@@ -373,9 +375,9 @@ void save_token_attributes(GTask *task, gpointer source, gpointer userdata, GCan
     sqlite3_close(database);
 };
 
-void setup_user_interface(GObject *task)
+void setup_user_interface(GObject *object)
 {
-    const gchar *home = g_object_get_data(task, "home");
+    const gchar *home = gtk_string_object_get_string(GTK_STRING_OBJECT(object));
     gsize maxlength = strlen(home) + 8;
     gchar *path = (gchar *)g_malloc0(maxlength);
     g_snprintf(path, maxlength, "%shistory", home);
@@ -386,7 +388,7 @@ void setup_user_interface(GObject *task)
     g_snprintf(path, maxlength, "%ssession.db", home);
     sqlite3 *database;
     gboolean exists = g_file_query_exists(g_file_new_for_path(path), NULL);
-    GListStore *profile = g_object_get_data(task, "profile");
+    GListStore *profile = g_object_get_data(object, "profile");
 
     const char *uri = "wss://ws.derivws.com/websockets/v3?app_id=66477";
     SoupMessage *message = soup_message_new(SOUP_METHOD_GET, uri);
@@ -405,18 +407,18 @@ void setup_user_interface(GObject *task)
                 get_token_schema(), NULL, &error,
                 "account", account,
                 "currency", currency, NULL);
-            GObject *object = G_OBJECT(gtk_string_object_new(account));
-            g_object_set_data(object, "token", token);
-            g_object_set_data(object, "currency", currency);
-            g_list_store_append(profile, object);
+            GObject *string = G_OBJECT(gtk_string_object_new(account));
+            g_object_set_data(string, "token", token);
+            g_object_set_data(string, "currency", currency);
+            g_list_store_append(profile, string);
         }
         sqlite3_finalize(stmt);
-        setup_symbol(task, database);
+        setup_symbol(object, database);
         gint id = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(profile), "id"));
-        GObject *object = g_list_model_get_item(G_LIST_MODEL(profile), id);
-        gchar *token = G_IS_OBJECT(object) ? g_object_get_data(object, "token") : NULL;
+        GObject *item = g_list_model_get_item(G_LIST_MODEL(profile), id);
+        gchar *token = G_IS_OBJECT(item) ? g_object_get_data(item, "token") : NULL;
 
-        gtk_window_present(GTK_WINDOW(g_object_get_data(task, "window")));
+        gtk_window_present(GTK_WINDOW(g_object_get_data(object, "window")));
 
         if (token)
         {
@@ -426,11 +428,11 @@ void setup_user_interface(GObject *task)
             SoupMessageHeaders *headers = soup_message_get_request_headers(message);
             soup_message_headers_append(headers, "Authorization", bearer);
             g_clear_pointer(&bearer, g_free);
-            present_actual_child(task);
+            present_actual_child(object);
         }
         else
         {
-            setup_webview(task);
+            setup_webview(object);
         }
     }
     else
@@ -439,13 +441,13 @@ void setup_user_interface(GObject *task)
         if (sqlite3_open(path, &database) == SQLITE_OK)
         {
             create_default_tables(database);
-            g_object_set_data(task, "fetch", GINT_TO_POINTER(1));
+            g_object_set_data(object, "fetch", GINT_TO_POINTER(1));
         }
     }
     sqlite3_close(database);
     SoupSession *session = soup_session_new();
-    g_object_set_data(task, "session", session);
+    g_object_set_data(object, "session", session);
     soup_session_websocket_connect_async(
-        session, message, NULL, NULL, G_PRIORITY_HIGH, NULL, connected, task);
+        session, message, NULL, NULL, G_PRIORITY_HIGH, NULL, connected, object);
     g_object_unref(message);
 }

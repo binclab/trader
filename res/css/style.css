@@ -28,7 +28,9 @@ label#time {
     font-size: 14px;
 }
 
-widget#candle {}
+widget#candle {
+    background-color: blue;
+}
 
 box#graduation {
     border-right: 0.1px solid midnightblue;
