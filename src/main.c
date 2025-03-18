@@ -8,11 +8,22 @@ void create_chart(GObject *object)
     GListModel *model = G_LIST_MODEL(g_object_get_data(object, "candles"));
     int count = g_list_model_get_n_items(model);
 
-    for (int position = 0; position < count; position++)
+    for (int position = count - 100; position < count; position++)
     {
+        GListModel *item = g_list_model_get_item(model, position);
+        GTask *task = g_task_new(object, NULL, add_widgets, NULL);
+        g_task_set_task_data(task, item, NULL);
+        g_task_run_in_thread(task, add_candle);
+        g_object_unref(task);
+    }
+
+    /*for (int position = 0; position < count; position++)
+    {
+        GTask *task = g_task_new(object, NULL, add_candle, g_list_model_get_item(model, position));
         GObject *candle = G_OBJECT(g_list_model_get_item(model, position));
         add_candle_to_chart(candle, object);
-    }
+        g_task
+    }*/
 }
 
 static void scroll_horizontal(GtkAdjustment *adjustment, GtkAdjustment *other_adjustment)
