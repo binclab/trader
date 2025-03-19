@@ -4,13 +4,7 @@ void shutdown(GtkApplication *application, gpointer userdata)
 {
     GObject *object = G_OBJECT(userdata);
     // Checking if pointer is not null and unrefencing
-    gpointer pointer = g_object_get_data(object, "connection");
-    if (pointer)
-    {
-        g_object_unref(pointer);
-    }
-
-    pointer = g_object_get_data(object, "session");
+    gpointer pointer = g_object_get_data(object, "session");
     if (pointer)
     {
         g_object_unref(pointer);
