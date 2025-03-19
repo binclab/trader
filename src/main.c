@@ -11,7 +11,8 @@ void create_chart(GObject *object)
     for (int position = count - 100; position < count; position++)
     {
         GListModel *item = g_list_model_get_item(model, position);
-        GTask *task = g_task_new(object, NULL, add_widgets, NULL);
+        GTask *task = position == count - 1 ? g_task_new(object, NULL, add_widgets, NULL)
+                                            : g_task_new(object, NULL, NULL, NULL);
         g_task_set_task_data(task, item, NULL);
         g_task_run_in_thread(task, add_candle);
         g_object_unref(task);
@@ -157,7 +158,7 @@ void present_actual_child(GObject *object)
     GdkRectangle rectangle;
     gdk_monitor_get_geometry(monitor, &rectangle);
     int height = rectangle.height - 128, width = rectangle.width - 128;
-    height = height < 768 ? 768 : height;
+    height = height < 576 ? 576 : height;
     width = width < 1024 ? 1024 : width;
     gtk_widget_set_size_request(widget, width, height);
     gtk_window_set_default_size(window, width, height);

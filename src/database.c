@@ -12,10 +12,9 @@ gint get_saved_candles(GObject *object, const gchar *symbol, const gchar *timefr
     sqlite3_open(path, &database);
     g_clear_pointer(&path, g_free);
 
-    gchar *suffix = "ORDER BY epoch DESC LIMIT 1;";
-    maxlength = strlen(timeframe) + 53;
+    maxlength = 24 + strlen(timeframe);
     gchar *instruction = (gchar *)g_malloc0(maxlength);
-    g_snprintf(instruction, maxlength, "SELECT epoch FROM \"%s\" %s", timeframe, suffix);
+    g_snprintf(instruction, maxlength, "SELECT COUNT(*) FROM \"%s\";", timeframe);
     sqlite3_stmt *stmt;
     sqlite3_prepare_v2(database, instruction, -1, &stmt, NULL);
     g_clear_pointer(&instruction, g_free);
@@ -23,6 +22,16 @@ gint get_saved_candles(GObject *object, const gchar *symbol, const gchar *timefr
 
     if (sqlite3_step(stmt) == SQLITE_ROW)
     {
+        gint rows = sqlite3_column_int(stmt, 0);
+        sqlite3_finalize(stmt);
+
+        gchar *suffix = "ORDER BY epoch DESC LIMIT 1;";
+        maxlength = strlen(timeframe) + 53;
+        instruction = (gchar *)g_malloc0(maxlength);
+        g_snprintf(instruction, maxlength, "SELECT epoch FROM \"%s\" %s", timeframe, suffix);
+        sqlite3_prepare_v2(database, instruction, -1, &stmt, NULL);
+        g_clear_pointer(&instruction, g_free);
+        sqlite3_step(stmt);
         if (g_str_equal(timeframe, "M1"))
         {
             gint64 epoch = sqlite3_column_int64(stmt, 0);
@@ -39,19 +48,17 @@ gint get_saved_candles(GObject *object, const gchar *symbol, const gchar *timefr
 
         if (fetch <= 1440)
         {
-            // start from
-            gchar *prefix = "SELECT epoch FROM";
-            gchar *affix = "ORDER BY epoch DESC LIMIT";
-            maxlength = 55 + strlen(timeframe);
+            gchar *prefix = "SELECT * FROM";
+            gchar *affix = "LIMIT -1 OFFSET";
+            maxlength = 50;
             instruction = (gchar *)g_malloc0(maxlength);
-            gint count = 1440 - fetch;
+            gint count = rows - 1441 + fetch;
             g_snprintf(instruction, maxlength, "%s \"%s\" %s %i;", prefix, timeframe, affix, count);
             sqlite3_prepare_v2(database, instruction, -1, &stmt, NULL);
-            printf("%s\n", instruction);
             g_clear_pointer(&instruction, g_free);
-            sqlite3_step(stmt);
             GListStore *store = g_object_get_data(object, "candles");
-            for (guint index = 0; index < count; index++)
+            g_print("Loading history from Database\n");
+            while (sqlite3_step(stmt) == SQLITE_ROW)
             {
                 GObject *candle = g_object_new(G_TYPE_OBJECT, NULL);
                 GDateTime *epoch = g_date_time_new_from_unix_utc(sqlite3_column_int64(stmt, 0));
@@ -66,8 +73,10 @@ gint get_saved_candles(GObject *object, const gchar *symbol, const gchar *timefr
                 g_object_set_data(candle, "data", g_object_get_data(object, "data"));
                 g_object_set_data(candle, "time", g_object_get_data(object, "time"));
                 g_list_store_append(store, candle);
+                g_date_time_new_now_local();
             }
             sqlite3_finalize(stmt);
+            g_print("History loaded from Database\n");
         }
         else
         {
@@ -76,6 +85,7 @@ gint get_saved_candles(GObject *object, const gchar *symbol, const gchar *timefr
     }
     else
         sqlite3_finalize(stmt);
+
     return fetch;
 }
 

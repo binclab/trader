@@ -2,18 +2,23 @@
 
 void add_widgets(GObject *source, GAsyncResult *result, gpointer userdata)
 {
-    GTask *task = G_TASK(result);
-    if (g_task_propagate_boolean(task, NULL))
+    if (g_task_propagate_boolean(G_TASK(result), NULL))
     {
-        GObject *object = G_OBJECT(task);
-        GtkWidget *area = GTK_WIDGET(g_object_get_data(object, "area"));
-        GtkWidget *label = GTK_WIDGET(g_object_get_data(object, "label"));
-        gint position = GPOINTER_TO_INT(g_object_get_data(object, "position"));
-
-        GtkFixed *fixed = GTK_FIXED(g_object_get_data(source, "timefixed"));
-        gtk_fixed_put(fixed, label, position, 0);
-        fixed = GTK_FIXED(g_object_get_data(source, "chartfixed"));
-        gtk_fixed_put(fixed, area, position, 0);
+        GObject *object = g_object_get_data(source, "timefixed");
+        GListModel *timemodel = G_LIST_MODEL(g_object_get_data(object, "store"));
+        GtkFixed *time = GTK_FIXED(object);
+        object = g_object_get_data(source, "chartfixed");
+        GListModel *chartmodel = G_LIST_MODEL(g_object_get_data(object, "store"));
+        GtkFixed *chart = GTK_FIXED(object);
+        for (gint index = 0; index < g_list_model_get_n_items(chartmodel); index++)
+        {
+            gint position = index * 24;
+            GtkWidget *area = g_list_model_get_item(chartmodel, index);
+            GtkWidget *label = g_list_model_get_item(timemodel, index);
+            gpointer pointer = g_object_get_data(G_OBJECT(area), "height");
+            gtk_fixed_put(time, label, position, 0);
+            gtk_fixed_put(chart, area, position, GPOINTER_TO_INT(pointer));
+        }
     }
 }
 
@@ -48,18 +53,12 @@ void add_candle(GTask *task, gpointer source, gpointer userdata, GCancellable *u
     GObject *fobject = G_OBJECT(g_object_get_data(object, "timefixed"));
     GListStore *store = G_LIST_STORE(g_object_get_data(fobject, "store"));
 
-    int position = GPOINTER_TO_INT(g_object_get_data(fobject, "position")) + 24;
     GObject *tobject = G_OBJECT(task);
-    g_object_set_data(fobject, "position", GINT_TO_POINTER(position));
-    g_object_set_data(tobject, "position", GINT_TO_POINTER(position));
     g_object_set_data(tobject, "area", area);
     g_object_set_data(tobject, "label", label);
     g_list_store_append(store, label);
 
     fobject = G_OBJECT(g_object_get_data(object, "chartfixed"));
     store = G_LIST_STORE(g_object_get_data(fobject, "store"));
-    position = GPOINTER_TO_INT(g_object_get_data(fobject, "position")) + 24;
-    g_object_set_data(fobject, "position", GINT_TO_POINTER(position));
     g_list_store_append(store, widget);
-    g_task_return_boolean(task, TRUE);
 }
