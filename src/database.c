@@ -49,8 +49,8 @@ gint get_saved_candles(GObject *object, const gchar *symbol, const gchar *timefr
         if (fetch <= 1440)
         {
             gchar *prefix = "SELECT * FROM";
-            gchar *affix = "LIMIT -1 OFFSET";
-            maxlength = 50;
+            gchar *affix = "ORDER BY epoch ASC LIMIT -1 OFFSET";
+            maxlength = 64;
             instruction = (gchar *)g_malloc0(maxlength);
             gint count = rows - 1441 + fetch;
             g_snprintf(instruction, maxlength, "%s \"%s\" %s %i;", prefix, timeframe, affix, count);
@@ -225,6 +225,7 @@ void save_history(GTask *task, gpointer source, gpointer userdata, GCancellable 
     gint count = g_list_model_get_n_items(model);
 
     gint start = count - GPOINTER_TO_INT(userdata);
+    g_print("Saving %s history\n", symbol);
     for (gint position = start; start >= 0 && position < count; position++)
     {
         GObject *candle = g_list_model_get_item(model, position);
@@ -239,6 +240,7 @@ void save_history(GTask *task, gpointer source, gpointer userdata, GCancellable 
         sqlite3_reset(stmt);
     }
     sqlite3_finalize(stmt);
+    g_print("%s history saved\n", symbol);
 }
 
 void update_active_symbols(GObject *object, JsonArray *list)

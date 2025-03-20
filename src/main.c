@@ -3,14 +3,15 @@
 #include "session.h"
 #include "chart.h"
 
-void create_chart(GObject *object)
+void create_chart(GTask *task, gpointer source, gpointer userdata, GCancellable *unused)
 {
+    GObject *object = G_OBJECT(source);
     GListModel *model = G_LIST_MODEL(g_object_get_data(object, "candles"));
     int count = g_list_model_get_n_items(model);
 
-    for (int position = count - 100; position < count; position++)
+    for (int position = count - 20; position < count; position++)
     {
-        GListModel *item = g_list_model_get_item(model, position);
+        GObject *item = g_list_model_get_item(model, position);
         GTask *task = position == count - 1 ? g_task_new(object, NULL, add_widgets, NULL)
                                             : g_task_new(object, NULL, NULL, NULL);
         g_task_set_task_data(task, item, NULL);

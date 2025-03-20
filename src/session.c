@@ -182,8 +182,12 @@ static void process_candle_history(GTask *task, gpointer source, gpointer userda
             // bincdata->stat->scale = 0.25 / bincdata->stat->range;
         }
     }
-    if(G_IS_OBJECT(g_object_get_data(object, "chartfixed")))
-        create_chart(object);
+    if (G_IS_OBJECT(g_object_get_data(object, "chartfixed")))
+    {
+        GTask *subtask = g_task_new(object, NULL, NULL, NULL);
+        g_task_run_in_thread(subtask, create_chart);
+        g_object_unref(subtask);
+    }
     GTask *subtask = g_task_new(object, NULL, NULL, NULL);
     g_task_set_task_data(subtask, GINT_TO_POINTER(length), NULL);
     g_task_run_in_thread(subtask, save_history);
