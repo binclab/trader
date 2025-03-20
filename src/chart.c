@@ -1,11 +1,11 @@
 #include "chart.h"
 
-void add_widgets(GObject *source, GAsyncResult *result, gpointer userdata)
+gboolean add_widgets(gpointer userdata)
 {
-    GObject *object = g_object_get_data(source, "timefixed");
+    GObject *object = g_object_get_data(G_OBJECT(userdata), "timefixed");
     GListModel *timemodel = G_LIST_MODEL(g_object_get_data(object, "store"));
     GtkFixed *time = GTK_FIXED(object);
-    object = g_object_get_data(source, "chartfixed");
+    object = g_object_get_data(G_OBJECT(userdata), "chartfixed");
     GListModel *chartmodel = G_LIST_MODEL(g_object_get_data(object, "store"));
     GtkFixed *chart = GTK_FIXED(object);
     for (gint index = 0; index < g_list_model_get_n_items(chartmodel); index++)
@@ -17,14 +17,13 @@ void add_widgets(GObject *source, GAsyncResult *result, gpointer userdata)
         gtk_fixed_put(time, label, position, 0);
         gtk_fixed_put(chart, area, position, GPOINTER_TO_INT(pointer));
     }
+    return G_SOURCE_REMOVE;
 }
 
-void add_candle(GTask *task, gpointer source, gpointer userdata, GCancellable *unused)
+void add_candle(GObject *object, GObject *candle)
 {
-    GObject *object = G_OBJECT(source), *candle = G_OBJECT(userdata);
-
-    GtkWidget *label = gtk_label_new(NULL);
     GtkWidget *widget = gtk_gl_area_new();
+    GtkWidget *label = gtk_label_new(NULL);
     GDateTime *utctime = (GDateTime *)g_object_get_data(candle, "epoch");
     GDateTime *localtime = g_date_time_to_local(utctime);
     gint hours = g_date_time_get_hour(localtime);
@@ -34,7 +33,7 @@ void add_candle(GTask *task, gpointer source, gpointer userdata, GCancellable *u
     {
         gchar *name = (gchar *)g_malloc0(6);
         g_snprintf(name, 6, "%02i:%02i", hours, minutes);
-        gtk_label_set_label(GTK_LABEL(label), name);
+        gtk_label_set_text(GTK_LABEL(label), name);
         g_clear_pointer(&name, g_free);
     }
 
@@ -46,15 +45,12 @@ void add_candle(GTask *task, gpointer source, gpointer userdata, GCancellable *u
     gtk_widget_set_name(widget, "candle");
     gtk_widget_set_name(label, "time");
 
-    GObject *fobject = G_OBJECT(g_object_get_data(object, "timefixed"));
-    GListStore *store = G_LIST_STORE(g_object_get_data(fobject, "store"));
+    GObject *pointer = G_OBJECT(g_object_get_data(object, "timefixed"));
+    GListStore *store = G_LIST_STORE(g_object_get_data(pointer, "store"));
 
-    GObject *tobject = G_OBJECT(task);
-    g_object_set_data(tobject, "area", area);
-    g_object_set_data(tobject, "label", label);
     g_list_store_append(store, label);
 
-    fobject = G_OBJECT(g_object_get_data(object, "chartfixed"));
-    store = G_LIST_STORE(g_object_get_data(fobject, "store"));
+    pointer = G_OBJECT(g_object_get_data(object, "chartfixed"));
+    store = G_LIST_STORE(g_object_get_data(pointer, "store"));
     g_list_store_append(store, widget);
 }

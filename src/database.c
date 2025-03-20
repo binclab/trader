@@ -239,8 +239,8 @@ void save_history(GTask *task, gpointer source, gpointer userdata, GCancellable 
         sqlite3_step(stmt);
         sqlite3_reset(stmt);
     }
-    sqlite3_finalize(stmt);
     g_print("%s history saved\n", symbol);
+    sqlite3_finalize(stmt);
 }
 
 void update_active_symbols(GObject *object, JsonArray *list)

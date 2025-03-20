@@ -11,13 +11,10 @@ void create_chart(GTask *task, gpointer source, gpointer userdata, GCancellable 
 
     for (int position = count - 20; position < count; position++)
     {
-        GObject *item = g_list_model_get_item(model, position);
-        GTask *task = position == count - 1 ? g_task_new(object, NULL, add_widgets, NULL)
-                                            : g_task_new(object, NULL, NULL, NULL);
-        g_task_set_task_data(task, item, NULL);
-        g_task_run_in_thread(task, add_candle);
-        g_object_unref(task);
+        add_candle(object, G_OBJECT(g_list_model_get_item(model, position)));
     }
+
+    g_idle_add(add_widgets, source);
 
     /*for (int position = 0; position < count; position++)
     {
