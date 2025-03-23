@@ -1,4 +1,5 @@
 #include "session.h"
+#include "chart.h"
 
 const SecretSchema *get_token_schema(void)
 {
@@ -120,12 +121,16 @@ static gchar *request_active_symbols()
 
 static void process_candle_history(GTask *task, gpointer source, gpointer userdata, GCancellable *unused)
 {
-    double highest = 0;
-    double lowest = 0;
     JsonArray *array = (JsonArray *)userdata;
     guint length = json_array_get_length(array);
 
     GObject *object = G_OBJECT(source);
+    GObject *stat = G_OBJECT(g_object_get_data(object, "stat"));
+    GObject *symbol = G_OBJECT(g_object_get_data(object, "symbol"));
+    gfloat *highest = (gfloat *)g_object_get_data(stat, "highest");
+    gfloat *lowest = (gfloat *)g_object_get_data(stat, "lowest");
+    gfloat *spot = (gfloat *)g_object_get_data(symbol, "spot");
+    gfloat *pip = (gfloat *)g_object_get_data(symbol, "pip");
     GListStore *store = g_object_get_data(object, "candles");
     gint skip = g_list_model_get_n_items(G_LIST_MODEL(store));
 
@@ -138,13 +143,19 @@ static void process_candle_history(GTask *task, gpointer source, gpointer userda
 
             candle = g_object_new(G_TYPE_OBJECT, NULL);
             GDateTime *epoch = g_date_time_new_from_unix_utc(json_object_get_int_member(item, "epoch"));
-            gdouble *price = g_new(gdouble, 4);
-            price[0] = json_object_get_double_member(item, "open");
-            price[1] = json_object_get_double_member(item, "close");
-            price[2] = json_object_get_double_member(item, "high");
-            price[3] = json_object_get_double_member(item, "low");
+            gfloat *open = g_new0(gfloat, 1);
+            gfloat *close = g_new0(gfloat, 1);
+            gfloat *high = g_new0(gfloat, 1);
+            gfloat *low = g_new0(gfloat, 1);
+            *open = (gfloat)json_object_get_double_member(item, "open");
+            *close = (gfloat)json_object_get_double_member(item, "close");
+            *high = (gfloat)json_object_get_double_member(item, "high");
+            *low = (gfloat)json_object_get_double_member(item, "low");
 
-            g_object_set_data(candle, "price", price);
+            g_object_set_data(candle, "open", open);
+            g_object_set_data(candle, "close", close);
+            g_object_set_data(candle, "high", high);
+            g_object_set_data(candle, "low", low);
             g_object_set_data(candle, "epoch", epoch);
             g_object_set_data(candle, "stat", g_object_get_data(object, "stat"));
             g_object_set_data(candle, "data", g_object_get_data(object, "data"));
@@ -159,32 +170,35 @@ static void process_candle_history(GTask *task, gpointer source, gpointer userda
             candle = g_list_model_get_item(G_LIST_MODEL(store), index);
         }
 
-        gdouble *price = (gdouble *)g_object_get_data(candle, "price");
+        gfloat *high = (gfloat *)g_object_get_data(candle, "high");
+        gfloat *low = (gfloat *)g_object_get_data(candle, "low");
 
-        if (highest < price[2])
-            highest = price[2];
+        if (*highest < *high)
+            *highest = *high;
 
-        if ((price[3] < lowest) || (lowest == 0))
-            lowest = price[3];
+        if ((*low < *lowest) || (lowest == 0))
+            *lowest = *low;
 
         if (index == 1439)
         {
-            highest = highest;
-            lowest = lowest;
-
-            gdouble *stat = g_object_get_data(object, "stat");
-            g_object_set_data(object, "price", price);
-            stat[0] = highest - lowest;
-            stat[1] = highest;
-            stat[2] = lowest;
-            stat[3] = lowest + stat[0] / 2;
-            stat[4] = 2 / stat[0];
+            gfloat *range = (gfloat *)g_object_get_data(stat, "range");
+            gfloat *baseline = (gfloat *)g_object_get_data(stat, "baseline");
+            gfloat *factor = (gfloat *)g_object_get_data(stat, "factor");
+            gfloat *open = (gfloat *)g_object_get_data(candle, "open");
+            gfloat *close = (gfloat *)g_object_get_data(candle, "close");
+            g_object_set_data(object, "open", open);
+            g_object_set_data(object, "close", close);
+            g_object_set_data(object, "high", high);
+            g_object_set_data(object, "low", low);
+            *range = *highest - *lowest;
+            *baseline = *open;
+            *factor = 16 / (*pip * 1000);
             // bincdata->stat->scale = 0.25 / bincdata->stat->range;
         }
     }
-    if (G_IS_OBJECT(g_object_get_data(object, "chartfixed")))
+    if (GTK_IS_FIXED(g_object_get_data(object, "chartfixed")))
     {
-        GTask *subtask = g_task_new(object, NULL, NULL, NULL);
+        GTask *subtask = g_task_new(object, NULL, que_widgets, NULL);
         g_task_run_in_thread(subtask, create_chart);
         g_object_unref(subtask);
     }
@@ -299,6 +313,8 @@ void connected(GObject *source, GAsyncResult *result, gpointer userdata)
     SoupSession *session = SOUP_SESSION(source);
     GError *error = NULL;
     SoupWebsocketConnection *connection = soup_session_websocket_connect_finish(session, result, &error);
+    g_signal_connect(connection, "message", G_CALLBACK(message), userdata);
+    g_signal_connect(connection, "closed", G_CALLBACK(closed), userdata);
 
     if (error)
     {
@@ -314,6 +330,12 @@ void connected(GObject *source, GAsyncResult *result, gpointer userdata)
 
     gpointer pointer = g_object_get_data(object, "symbol");
 
+    if (soup_websocket_connection_get_state(connection) != SOUP_WEBSOCKET_STATE_OPEN)
+    {
+        g_warning("WebSocket connection is not open.");
+        return;
+    }
+
     if (g_object_get_data(object, "fetch"))
     {
         gchar *instruction = request_active_symbols();
@@ -328,7 +350,4 @@ void connected(GObject *source, GAsyncResult *result, gpointer userdata)
         gchar *instruction = request_tick_history(symbol, count);
         soup_websocket_connection_send_text(connection, instruction);
     }
-
-    g_signal_connect(connection, "message", G_CALLBACK(message), userdata);
-    g_signal_connect(connection, "closed", G_CALLBACK(closed), userdata);
 }

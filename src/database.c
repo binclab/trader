@@ -62,12 +62,19 @@ gint get_saved_candles(GObject *object, const gchar *symbol, const gchar *timefr
             {
                 GObject *candle = g_object_new(G_TYPE_OBJECT, NULL);
                 GDateTime *epoch = g_date_time_new_from_unix_utc(sqlite3_column_int64(stmt, 0));
-                gdouble *price = g_new(gdouble, 4);
-                price[0] = sqlite3_column_double(stmt, 1);
-                price[1] = sqlite3_column_double(stmt, 2);
-                price[2] = sqlite3_column_double(stmt, 3);
-                price[3] = sqlite3_column_double(stmt, 4);
-                g_object_set_data(candle, "price", price);
+                gfloat *open = g_new0(gfloat, 1);
+                gfloat *close = g_new0(gfloat, 1);
+                gfloat *high = g_new0(gfloat, 1);
+                gfloat *low = g_new0(gfloat, 1);
+                *open = (gfloat)sqlite3_column_double(stmt, 1);
+                *close = (gfloat)sqlite3_column_double(stmt, 2);
+                *high = (gfloat)sqlite3_column_double(stmt, 3);
+                *low = (gfloat)sqlite3_column_double(stmt, 4);
+
+                g_object_set_data(candle, "open", open);
+                g_object_set_data(candle, "close", close);
+                g_object_set_data(candle, "high", high);
+                g_object_set_data(candle, "low", low);
                 g_object_set_data(candle, "epoch", epoch);
                 g_object_set_data(candle, "stat", g_object_get_data(object, "stat"));
                 g_object_set_data(candle, "data", g_object_get_data(object, "data"));
@@ -170,13 +177,13 @@ void setup_symbol(GObject *task, sqlite3 *database)
     g_object_set_data(object, "market", g_strdup((const gchar *)sqlite3_column_text(stmt, 9)));
     g_object_set_data(object, "market_display_name", g_strdup((const gchar *)sqlite3_column_text(stmt, 10)));
 
-    gdouble *pip = g_new(gdouble, 1);
-    *pip = sqlite3_column_double(stmt, 11);
+    gfloat *pip = g_new(gfloat, 1);
+    *pip = (gfloat)sqlite3_column_double(stmt, 11);
     // gint degree = g_utf8_strchr(buffer, -1, '1') - g_utf8_strchr(buffer, -1, '.');
     g_object_set_data(object, "pip", pip);
     g_object_set_data(object, "quoted_currency_symbol", g_strdup((const gchar *)sqlite3_column_text(stmt, 12)));
-    gdouble *spot = g_new(gdouble, 1);
-    *spot = sqlite3_column_double(stmt, 13);
+    gfloat *spot = g_new(gfloat, 1);
+    *spot = (gfloat)sqlite3_column_double(stmt, 13);
     g_object_set_data(object, "spot", spot);
     g_object_set_data(object, "spot_age", g_strdup((const gchar *)sqlite3_column_text(stmt, 14)));
     g_object_set_data(object, "spot_percentage_change", g_strdup((const gchar *)sqlite3_column_text(stmt, 15)));
@@ -189,6 +196,7 @@ void setup_symbol(GObject *task, sqlite3 *database)
     sqlite3_finalize(stmt);
 
     g_object_set_data(task, "symbol", symbol);
+    g_print("Symbol: %s\n", (gchar*)g_object_get_data(G_OBJECT(symbol), "display_name"));
 }
 
 void save_history(GTask *task, gpointer source, gpointer userdata, GCancellable *unused)
@@ -230,12 +238,15 @@ void save_history(GTask *task, gpointer source, gpointer userdata, GCancellable 
     {
         GObject *candle = g_list_model_get_item(model, position);
         GDateTime *epoch = (GDateTime *)g_object_get_data(candle, "epoch");
-        gdouble *price = (gdouble *)g_object_get_data(candle, "price");
+        gfloat open = *(gfloat *)g_object_get_data(candle, "open");
+        gfloat close = *(gfloat *)g_object_get_data(candle, "close");
+        gfloat high = *(gfloat *)g_object_get_data(candle, "high");
+        gfloat low = *(gfloat *)g_object_get_data(candle, "low");
         sqlite3_bind_int64(stmt, 1, g_date_time_to_unix(epoch));
-        sqlite3_bind_double(stmt, 2, price[0]);
-        sqlite3_bind_double(stmt, 3, price[1]);
-        sqlite3_bind_double(stmt, 4, price[2]);
-        sqlite3_bind_double(stmt, 5, price[3]);
+        sqlite3_bind_double(stmt, 2, (gdouble)open);
+        sqlite3_bind_double(stmt, 3, (gdouble)close);
+        sqlite3_bind_double(stmt, 4, (gdouble)high);
+        sqlite3_bind_double(stmt, 5, (gdouble)low);
         sqlite3_step(stmt);
         sqlite3_reset(stmt);
     }

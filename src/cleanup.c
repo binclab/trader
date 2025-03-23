@@ -1,9 +1,34 @@
 #include "cleanup.h"
 
-void shutdown(GtkApplication *application, gpointer userdata)
+static void free_pointer(GObject *source, GAsyncResult *result, gpointer userdata)
 {
-    GObject *object = G_OBJECT(userdata);
-    // Checking if pointer is not null and unrefencing
+    g_object_unref(userdata);
+}
+
+static void destroy_widgets(GTask *task, gpointer source, gpointer userdata, GCancellable *unused)
+{
+    GObject *object = G_OBJECT(source);
+    gpointer pointer[2] = {g_object_get_data(object, "chartfixed"),
+                           g_object_get_data(object, "timefixed")};
+    for (gint index = 0; index < 2; index++)
+    {
+        if (pointer[index])
+        {
+            gpointer store = g_object_get_data(G_OBJECT(pointer[index]), "store");
+            if (store)
+            {
+                GTask *task = g_task_new(store, NULL, free_pointer, store);
+                g_task_set_task_data(task, store, NULL);
+                g_task_run_in_thread(task, free_list);
+                g_object_unref(task);
+            }
+        }
+    }
+}
+
+static void remove_data(GTask *task, gpointer source, gpointer userdata, GCancellable *unused)
+{
+    GObject *object = G_OBJECT(source);
     gpointer pointer = g_object_get_data(object, "session");
     if (pointer)
     {
@@ -25,14 +50,31 @@ void shutdown(GtkApplication *application, gpointer userdata)
     pointer = g_object_get_data(object, "stat");
     if (pointer)
     {
-        g_free(pointer);
+        gpointer data = g_object_get_data(pointer, "highest");
+        if (data)
+            g_free(data);
+        data = g_object_get_data(pointer, "lowest");
+        if (data)
+            g_free(data);
+        data = g_object_get_data(pointer, "range");
+        if (data)
+            g_free(data);
+        data = g_object_get_data(pointer, "baseline");
+        if (data)
+            g_free(data);
+        data = g_object_get_data(pointer, "factor");
+        if (data)
+            g_free(data);
+        g_object_unref(pointer);
     }
 
     pointer = g_object_get_data(object, "candles");
     if (pointer)
     {
-        free_candles(G_LIST_STORE(pointer));
-        g_object_unref(pointer);
+        GTask *task = g_task_new(object, NULL, free_pointer, pointer);
+        g_task_set_task_data(task, G_LIST_MODEL(pointer), NULL);
+        g_task_run_in_thread(task, free_list);
+        g_object_unref(task);
     }
 
     pointer = g_object_get_data(object, "profile");
@@ -167,10 +209,16 @@ void shutdown(GtkApplication *application, gpointer userdata)
     g_object_set_data(object, "time", NULL);
     g_object_set_data(object, "stat", NULL);
     g_object_set_data(object, "data", NULL);
-    g_object_set_data(object, "price", NULL);
     g_object_set_data(object, "epoch", NULL);
     g_object_set_data(object, "home", NULL);
     g_object_set_data(object, "token", NULL);
+}
+
+void shutdown(GtkApplication *application, gpointer userdata)
+{
+    GTask *task = g_task_new(userdata, NULL, NULL, NULL);
+    g_task_run_in_thread(task, remove_data);
+    g_object_unref(task);
 }
 
 void free_instrument(GObject *symbol)
@@ -204,19 +252,77 @@ void free_instrument(GObject *symbol)
     g_free(symbol);
 }
 
-void free_candles(GListStore *store)
+void free_list(GTask *task, gpointer source, gpointer userdata, GCancellable *unused)
 {
-    GListModel *model = G_LIST_MODEL(store);
-    gint count = g_list_model_get_n_items(model);
-    for (gint index = 0; index < count; index++)
+    GListModel *model = G_LIST_MODEL(userdata);
+
+    if (G_IS_LIST_MODEL(model))
     {
-        GObject *object = g_list_model_get_item(model, index);
-        gpointer pointer = g_object_get_data(object, "price");
-        g_free(pointer);
-        pointer = g_object_get_data(object, "epoch");
-        if (pointer)
+        gint count = g_list_model_get_n_items(model);
+
+        for (gint index = 0; index < count; index++)
         {
-            g_date_time_unref((GDateTime *)pointer);
+            GObject *item = g_list_model_get_item(model, index);
+            if (item)
+            {
+                gpointer pointer = g_object_get_data(item, "open");
+                if (pointer)
+                    g_free(pointer);
+                pointer = g_object_get_data(item, "close");
+                if (pointer)
+                    g_free(pointer);
+                pointer = g_object_get_data(item, "high");
+                if (pointer)
+                    g_free(pointer);
+                pointer = g_object_get_data(item, "low");
+                if (pointer)
+                    g_free(pointer);
+                pointer = g_object_get_data(item, "epoch");
+                if (pointer)
+                    g_date_time_unref((GDateTime *)pointer);
+                pointer = g_object_get_data(item, "ordinate");
+                if (pointer)
+                    g_free(pointer);
+                pointer = g_object_get_data(item, "red");
+                if (pointer)
+                    g_free(pointer);
+                pointer = g_object_get_data(item, "green");
+                if (pointer)
+                    g_free(pointer);
+                pointer = g_object_get_data(item, "blue");
+                if (pointer)
+                    g_free(pointer);
+                g_object_unref(item);
+            }
         }
     }
+}
+
+void unrealize_cartesian(GtkGLArea *area, gpointer userdata)
+{
+    if (gtk_gl_area_get_error(area) == NULL)
+    {
+        GObject *object = G_OBJECT(area);
+        GObject *data = G_OBJECT(g_object_get_data(G_OBJECT(userdata), "data"));
+        GLuint buffer = GPOINTER_TO_UINT(g_object_get_data(object, "buffer"));
+        GLuint program = GPOINTER_TO_UINT(g_object_get_data(data, "program"));
+        gpointer pointer = g_object_get_data(object, "store");
+        GTask *task = g_task_new(NULL, NULL, free_pointer, pointer);
+        g_task_set_task_data(task, pointer, NULL);
+        g_task_run_in_thread(task, free_list);
+        g_object_unref(task);
+        glDeleteProgram(program);
+        glDeleteVertexArrays(1, &buffer);
+    }
+}
+
+gboolean close_window(GtkWindow *window, gpointer userdata)
+{
+    gtk_window_minimize(window);
+
+    GTask *task = g_task_new(userdata, NULL, NULL, NULL);
+    g_task_run_in_thread(task, destroy_widgets);
+    g_object_unref(task);
+    gtk_window_destroy(window);
+    return true;
 }

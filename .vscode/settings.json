@@ -33,7 +33,11 @@
         "cleanup.h": "c",
         "sqlite3.h": "c",
         "chart.h": "c",
-        "typeinfo": "c"
+        "typeinfo": "c",
+        "deque": "c",
+        "unordered_map": "c",
+        "vector": "c",
+        "iterator": "c"
     },
     "C_Cpp.default.compileCommands": "/home/binclab/trader/.build/compile_commands.json",
     "C_Cpp.default.configurationProvider": "mesonbuild.mesonbuild",
