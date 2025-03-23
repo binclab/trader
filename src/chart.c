@@ -189,6 +189,10 @@ void add_candle(GObject *object, GObject *candle)
     GtkAdjustment *chartvadjustment = GTK_ADJUSTMENT(g_object_get_data(object, "chartvadjustment"));
     GtkAdjustment *scaleadjustment = GTK_ADJUSTMENT(g_object_get_data(object, "scaleadjustment"));
 
+GtkViewport *viewport = ;
+GtkAdjustment *adjustment = gtk_scrollable_get_vadjustment(GTK_SCROLLABLE(viewport));
+GtkAdjustment *hadjustment = gtk_scrollable_get_hadjustment(GTK_SCROLLABLE(viewport));
+
     gdouble *ordinate = (gdouble *)g_new0(gdouble, 1);
     *ordinate = (gdouble)(baseline - openPrice) * scale - height + 720;
     if (*ordinate < 0)
