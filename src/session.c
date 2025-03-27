@@ -35,7 +35,7 @@ void load_changed(WebKitWebView *webview, WebKitLoadEvent event, gpointer userda
     case WEBKIT_LOAD_REDIRECTED:
         const gchar *url = webkit_web_view_get_uri(webview);
         GListStore *profile = G_LIST_STORE(g_object_get_data(object, "profile"));
-        if (g_strstr_len(url, -1, "https://www.binclab.com/deriv?"))
+        if (g_strstr_len(url, -1, "https://trader.binclab.com/deriv?"))
         {
             gchar **result = g_strsplit(g_strrstr(url, "acct") + 4, "=", 0);
             gchar *endptr;
