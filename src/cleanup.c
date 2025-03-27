@@ -62,7 +62,22 @@ static void remove_data(GTask *task, gpointer source, gpointer userdata, GCancel
         data = g_object_get_data(pointer, "baseline");
         if (data)
             g_free(data);
-        data = g_object_get_data(pointer, "factor");
+        g_object_unref(pointer);
+    }
+
+    pointer = g_object_get_data(object, "pip");
+    if (pointer)
+    {
+        gpointer data = g_object_get_data(pointer, "highest");
+        if (data)
+            g_free(data);
+        data = g_object_get_data(pointer, "lowest");
+        if (data)
+            g_free(data);
+        data = g_object_get_data(pointer, "range");
+        if (data)
+            g_free(data);
+        data = g_object_get_data(pointer, "midpoint");
         if (data)
             g_free(data);
         g_object_unref(pointer);
@@ -280,6 +295,27 @@ void free_list(GTask *task, gpointer source, gpointer userdata, GCancellable *un
                 pointer = g_object_get_data(item, "epoch");
                 if (pointer)
                     g_date_time_unref((GDateTime *)pointer);
+                pointer = g_object_get_data(item, "openPip");
+                if (pointer)
+                    g_free(pointer);
+                pointer = g_object_get_data(item, "closePip");
+                if (pointer)
+                    g_free(pointer);
+                pointer = g_object_get_data(item, "highPip");
+                if (pointer)
+                    g_free(pointer);
+                pointer = g_object_get_data(item, "lowPip");
+                if (pointer)
+                    g_free(pointer);
+                pointer = g_object_get_data(item, "midPip");
+                if (pointer)
+                    g_free(pointer);
+                pointer = g_object_get_data(item, "rangePip");
+                if (pointer)
+                    g_free(pointer);
+                pointer = g_object_get_data(item, "factor");
+                if (pointer)
+                    g_free(pointer);
                 pointer = g_object_get_data(item, "ordinate");
                 if (pointer)
                     g_free(pointer);

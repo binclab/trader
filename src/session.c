@@ -126,14 +126,24 @@ static void process_candle_history(GTask *task, gpointer source, gpointer userda
 
     GObject *object = G_OBJECT(source);
     GObject *stat = G_OBJECT(g_object_get_data(object, "stat"));
+    GObject *pip = G_OBJECT(g_object_get_data(object, "pip"));
     GObject *symbol = G_OBJECT(g_object_get_data(object, "symbol"));
-    gfloat *highest = (gfloat *)g_object_get_data(stat, "highest");
-    gfloat *lowest = (gfloat *)g_object_get_data(stat, "lowest");
-    gfloat *spot = (gfloat *)g_object_get_data(symbol, "spot");
-    gfloat *pip = (gfloat *)g_object_get_data(symbol, "pip");
+    gdouble *highest = (gdouble *)g_object_get_data(stat, "highest");
+    gdouble *lowest = (gdouble *)g_object_get_data(stat, "lowest");
+    gdouble *spot = (gdouble *)g_object_get_data(symbol, "spot");
+    gdouble *pipValue = (gdouble *)g_object_get_data(symbol, "pip");
     GListStore *store = g_object_get_data(object, "candles");
     gint skip = g_list_model_get_n_items(G_LIST_MODEL(store));
 
+    GObject *pointer = G_OBJECT(store);
+    gdouble *lowestPip = (gdouble *)g_object_get_data(pip, "lowest");
+    gdouble *highestPip = (gdouble *)g_object_get_data(pip, "highest");
+    gdouble *rangePip = (gdouble *)g_object_get_data(pip, "range");
+    gdouble *midPip = (gdouble *)g_object_get_data(pip, "midpoint");
+
+    g_object_set_data(pip, "pip", pipValue);
+
+    // gdouble sum
     for (size_t index = 0; index < 1440; index++)
     {
         GObject *candle;
@@ -143,21 +153,36 @@ static void process_candle_history(GTask *task, gpointer source, gpointer userda
 
             candle = g_object_new(G_TYPE_OBJECT, NULL);
             GDateTime *epoch = g_date_time_new_from_unix_utc(json_object_get_int_member(item, "epoch"));
-            gfloat *open = g_new0(gfloat, 1);
-            gfloat *close = g_new0(gfloat, 1);
-            gfloat *high = g_new0(gfloat, 1);
-            gfloat *low = g_new0(gfloat, 1);
-            *open = (gfloat)json_object_get_double_member(item, "open");
-            *close = (gfloat)json_object_get_double_member(item, "close");
-            *high = (gfloat)json_object_get_double_member(item, "high");
-            *low = (gfloat)json_object_get_double_member(item, "low");
+            gdouble *open = g_new0(gdouble, 1);
+            gdouble *close = g_new0(gdouble, 1);
+            gdouble *high = g_new0(gdouble, 1);
+            gdouble *low = g_new0(gdouble, 1);
+            gdouble *openPip = g_new0(gdouble, 1);
+            gdouble *closePip = g_new0(gdouble, 1);
+            gdouble *highPip = g_new0(gdouble, 1);
+            gdouble *lowPip = g_new0(gdouble, 1);
+            gdouble *rangePip = g_new0(gdouble, 1);
+            gdouble *midPip = g_new0(gdouble, 1);
+            *open = (gdouble)json_object_get_double_member(item, "open");
+            *close = (gdouble)json_object_get_double_member(item, "close");
+            *high = (gdouble)json_object_get_double_member(item, "high");
+            *low = (gdouble)json_object_get_double_member(item, "low");
+
+            g_object_set_data(candle, "openPip", openPip);
+            g_object_set_data(candle, "closePip", closePip);
+            g_object_set_data(candle, "highPip", highPip);
+            g_object_set_data(candle, "lowPip", lowPip);
+            g_object_set_data(candle, "rangePip", rangePip);
+            g_object_set_data(candle, "midPip", midPip);
 
             g_object_set_data(candle, "open", open);
             g_object_set_data(candle, "close", close);
             g_object_set_data(candle, "high", high);
             g_object_set_data(candle, "low", low);
             g_object_set_data(candle, "epoch", epoch);
+
             g_object_set_data(candle, "stat", g_object_get_data(object, "stat"));
+            g_object_set_data(candle, "pip", g_object_get_data(object, "pip"));
             g_object_set_data(candle, "data", g_object_get_data(object, "data"));
             g_object_set_data(candle, "time", g_object_get_data(object, "time"));
 
@@ -170,8 +195,8 @@ static void process_candle_history(GTask *task, gpointer source, gpointer userda
             candle = g_list_model_get_item(G_LIST_MODEL(store), index);
         }
 
-        gfloat *high = (gfloat *)g_object_get_data(candle, "high");
-        gfloat *low = (gfloat *)g_object_get_data(candle, "low");
+        gdouble *high = (gdouble *)g_object_get_data(candle, "high");
+        gdouble *low = (gdouble *)g_object_get_data(candle, "low");
 
         if (*highest < *high)
             *highest = *high;
@@ -181,19 +206,22 @@ static void process_candle_history(GTask *task, gpointer source, gpointer userda
 
         if (index == 1439)
         {
-            gfloat *range = (gfloat *)g_object_get_data(stat, "range");
-            gfloat *baseline = (gfloat *)g_object_get_data(stat, "baseline");
-            gfloat *factor = (gfloat *)g_object_get_data(stat, "factor");
-            gfloat *open = (gfloat *)g_object_get_data(candle, "open");
-            gfloat *close = (gfloat *)g_object_get_data(candle, "close");
+            gdouble *range = (gdouble *)g_object_get_data(stat, "range");
+            gdouble *baseline = (gdouble *)g_object_get_data(stat, "baseline");
+            gdouble *factor = (gdouble *)g_object_get_data(pip, "factor");
+            gdouble *open = (gdouble *)g_object_get_data(candle, "open");
+            gdouble *close = (gdouble *)g_object_get_data(candle, "close");
             g_object_set_data(object, "open", open);
             g_object_set_data(object, "close", close);
             g_object_set_data(object, "high", high);
             g_object_set_data(object, "low", low);
-            *range = *highest - *lowest;
+
             *baseline = *open;
-            *factor = 16 / (*pip * 1000);
-            // bincdata->stat->scale = 0.25 / bincdata->stat->range;
+            *highestPip = (*highest - *baseline) / *pipValue;
+            *lowestPip = (*lowest - *baseline) / *pipValue;
+            *midPip = (*highestPip + *lowestPip) / 2;
+            *rangePip = *highestPip - *lowestPip;
+            *factor = 0.25 * (572000 / *rangePip);
         }
     }
     if (GTK_IS_FIXED(g_object_get_data(object, "chartfixed")))

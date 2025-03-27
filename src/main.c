@@ -74,10 +74,10 @@ static void realize_cartesian(GtkGLArea *area, gpointer userdata)
     glBindVertexArray(vao);*/
 
     GObject *line = g_object_new(G_TYPE_OBJECT, NULL);
-    gfloat *ordinate = g_new0(gfloat, 1);
-    gfloat *red = g_new0(gfloat, 1);
-    gfloat *green = g_new0(gfloat, 1);
-    gfloat *blue = g_new0(gfloat, 1);
+    gdouble *ordinate = g_new0(gdouble, 1);
+    gdouble *red = g_new0(gdouble, 1);
+    gdouble *green = g_new0(gdouble, 1);
+    gdouble *blue = g_new0(gdouble, 1);
     *ordinate = 0.0f;
     *red = 0.0f;
     *green = 0.0f;
@@ -118,18 +118,18 @@ static gboolean render_cartesian(GtkGLArea *area, GdkGLContext *context, gpointe
     GListModel *model = G_LIST_MODEL(g_object_get_data(object, "store"));
     GLuint buffer = GPOINTER_TO_UINT(g_object_get_data(object, "buffer"));
     gboolean firstrun = GPOINTER_TO_INT(g_object_get_data(object, "firstrun")) == 0;
-    gfloat scale = *(gfloat *)g_object_get_data(stat, "scale");
-    gfloat baseline = *(gfloat *)g_object_get_data(stat, "baseline");
-    gfloat close = *(gfloat *)g_object_get_data(candle, "close");
+    gdouble scale = *(gdouble *)g_object_get_data(stat, "scale");
+    gdouble baseline = *(gdouble *)g_object_get_data(stat, "baseline");
+    gdouble close = *(gdouble *)g_object_get_data(candle, "close");
     GLuint program = GPOINTER_TO_UINT(g_object_get_data(data, "program"));
 
     for (gint index = 0; index < g_list_model_get_n_items(model); index++)
     {
         GObject *line = G_OBJECT(g_list_model_get_item(model, index));
-        gfloat ordinate = *(gfloat *)g_object_get_data(line, "ordinate");
-        gfloat red = *(gfloat *)g_object_get_data(line, "red");
-        gfloat green = *(gfloat *)g_object_get_data(line, "green");
-        gfloat blue = *(gfloat *)g_object_get_data(line, "blue");
+        gdouble ordinate = *(gdouble *)g_object_get_data(line, "ordinate");
+        gdouble red = *(gdouble *)g_object_get_data(line, "red");
+        gdouble green = *(gdouble *)g_object_get_data(line, "green");
+        gdouble blue = *(gdouble *)g_object_get_data(line, "blue");
         if (firstrun)
         {
             g_object_set_data((object), "firstrun", GINT_TO_POINTER(firstrun));
@@ -159,10 +159,10 @@ static gboolean render_cartesian(GtkGLArea *area, GdkGLContext *context, gpointe
         GLint pos_attr = glGetAttribLocation(program, "position");
         GLint col_attr = glGetAttribLocation(program, "color");
 
-        glVertexAttribPointer(pos_attr, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(gfloat), (void *)0);
+        glVertexAttribPointer(pos_attr, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(gdouble), (void *)0);
         glEnableVertexAttribArray(pos_attr);
 
-        glVertexAttribPointer(col_attr, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(gfloat), (void *)(2 * sizeof(gfloat)));
+        glVertexAttribPointer(col_attr, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(gdouble), (void *)(2 * sizeof(gdouble)));
         glEnableVertexAttribArray(col_attr);
 
         glDrawArrays(GL_LINES, 0, 2);
@@ -205,7 +205,6 @@ static void setup_header(GObject *object, GtkBox *parent)
 
 static void setup_content(GObject *object, GtkBox *parent)
 {
-    GtkAdjustment *chartvadjustment, *charthadjustment, *scaleadjustment, *timeadjustment;
     GtkWidget *container = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
     GtkWidget *navigation = gtk_notebook_new();
     GtkWidget *widget = gtk_overlay_new();
@@ -216,9 +215,13 @@ static void setup_content(GObject *object, GtkBox *parent)
     GtkWidget *chartscroll = gtk_scrolled_window_new();
     GtkWidget *scalescroll = gtk_scrolled_window_new();
     GtkWidget *timescroll = gtk_scrolled_window_new();
-    GtkWidget *chartport = gtk_viewport_new(NULL, NULL);
-    GtkWidget *scaleport = gtk_viewport_new(NULL, NULL);
-    GtkWidget *timeport = gtk_viewport_new(NULL, NULL);
+    GtkAdjustment *hadjustment = gtk_adjustment_new(
+        0, 0, 1024, CANDLE_WIDTH, CANDLE_WIDTH * 20, 1024);
+    GtkAdjustment *vadjustment = gtk_adjustment_new(
+        0, 0, 576, CANDLE_HEIGHT, CANDLE_HEIGHT * 20, 576);
+    GtkWidget *chartport = gtk_viewport_new(hadjustment, vadjustment);
+    GtkWidget *scaleport = gtk_viewport_new(NULL, vadjustment);
+    GtkWidget *timeport = gtk_viewport_new(hadjustment, NULL);
     GtkWidget *scaleinfo = gtk_label_new(NULL);
 
     GtkOverlay *overlay = GTK_OVERLAY(widget);
@@ -229,13 +232,11 @@ static void setup_content(GObject *object, GtkBox *parent)
     gtk_overlay_set_child(overlay, chartscroll);
     gtk_widget_set_name(chartport, "chartport");
     g_object_set_data(object, "chartport", chartport);
+    g_object_set_data(object, "scaleport", scaleport);
+    g_object_set_data(object, "timeport", timeport);
     GtkScrolledWindow *window = GTK_SCROLLED_WINDOW(chartscroll);
     gtk_scrolled_window_set_child(window, chartport);
     gtk_scrolled_window_set_policy(window, GTK_POLICY_EXTERNAL, GTK_POLICY_EXTERNAL);
-    charthadjustment = gtk_scrolled_window_get_hadjustment(window);
-    chartvadjustment = gtk_scrolled_window_get_vadjustment(window);
-    g_object_set_data(object, "charthadjustment", charthadjustment);
-    g_object_set_data(object, "chartvadjustment", chartvadjustment);
 
     widget = gtk_fixed_new();
     GtkViewport *viewport = GTK_VIEWPORT(chartport);
@@ -264,8 +265,6 @@ static void setup_content(GObject *object, GtkBox *parent)
     window = GTK_SCROLLED_WINDOW(timescroll);
     gtk_scrolled_window_set_child(window, timeport);
     gtk_scrolled_window_set_policy(window, GTK_POLICY_EXTERNAL, GTK_POLICY_NEVER);
-    timeadjustment = gtk_scrolled_window_get_hadjustment(window);
-    g_object_set_data(object, "timeadjustment", timeadjustment);
 
     // box =  GTK_BOX(gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0));
     // widget = GTK_WIDGET(g_object_new(GTK_TYPE_WIDGET, NULL));
@@ -284,8 +283,6 @@ static void setup_content(GObject *object, GtkBox *parent)
     window = GTK_SCROLLED_WINDOW(scalescroll);
     gtk_scrolled_window_set_child(window, scaleport);
     gtk_scrolled_window_set_policy(window, GTK_POLICY_NEVER, GTK_POLICY_EXTERNAL);
-    scaleadjustment = gtk_scrolled_window_get_vadjustment(window);
-    g_object_set_data(object, "scaleadjustment", scaleadjustment);
 
     widget = gtk_fixed_new();
     viewport = GTK_VIEWPORT(scaleport);
@@ -300,6 +297,11 @@ static void setup_content(GObject *object, GtkBox *parent)
     gtk_widget_set_vexpand(container, TRUE);
     gtk_widget_set_size_request(navigation, 250, -1);
     gtk_box_append(parent, container);
+
+    GtkAdjustment *charthadjustment = gtk_scrollable_get_hadjustment(GTK_SCROLLABLE(chartport));
+    GtkAdjustment *chartvadjustment = gtk_scrollable_get_vadjustment(GTK_SCROLLABLE(chartport));
+    GtkAdjustment *timeadjustment = gtk_scrollable_get_hadjustment(GTK_SCROLLABLE(timeport));
+    GtkAdjustment *scaleadjustment = gtk_scrollable_get_vadjustment(GTK_SCROLLABLE(scaleport));
 
     g_signal_connect(charthadjustment, "value-changed", G_CALLBACK(scroll_horizontal), timeadjustment);
     g_signal_connect(timeadjustment, "value-changed", G_CALLBACK(scroll_horizontal), charthadjustment);
@@ -393,20 +395,32 @@ static void activate(GtkApplication *application, gpointer userdata)
     GListStore *profile = g_list_store_new(GTK_TYPE_STRING_OBJECT);
     GListStore *candles = g_list_store_new(G_TYPE_OBJECT);
     GObject *stat = g_object_new(G_TYPE_OBJECT, NULL);
+    GObject *pip = g_object_new(G_TYPE_OBJECT, NULL);
     GObject *data = g_object_new(G_TYPE_OBJECT, NULL);
 
-    gfloat *highest = g_new0(gfloat, 1);
-    gfloat *lowest = g_new0(gfloat, 1);
-    gfloat *range = g_new0(gfloat, 1);
-    gfloat *baseline = g_new0(gfloat, 1);
-    gfloat *factor = g_new0(gfloat, 1);
+    gdouble *highest = g_new0(gdouble, 1);
+    gdouble *lowest = g_new0(gdouble, 1);
+    gdouble *range = g_new0(gdouble, 1);
+    gdouble *baseline = g_new0(gdouble, 1);
+    gdouble *factor = g_new0(gdouble, 1);
+
+    gdouble *highestPip = g_new0(gdouble, 1);
+    gdouble *lowestPip = g_new0(gdouble, 1);
+    gdouble *pipRange = g_new0(gdouble, 1);
+    gdouble *midPoint = g_new0(gdouble, 1);
+
+    g_object_set_data(pip, "highest", highestPip);
+    g_object_set_data(pip, "lowest", lowestPip);
+    g_object_set_data(pip, "range", pipRange);
+    g_object_set_data(pip, "midpoint", midPoint);
+    g_object_set_data(pip, "factor", factor);
 
     g_object_set_data(stat, "highest", highest);
     g_object_set_data(stat, "lowest", lowest);
     g_object_set_data(stat, "range", range);
     g_object_set_data(stat, "baseline", baseline);
-    g_object_set_data(stat, "factor", factor);
     g_object_set_data(object, "stat", stat);
+    g_object_set_data(object, "pip", pip);
     g_object_set_data(object, "data", data);
     g_object_set_data(object, "candles", candles);
     g_object_set_data(object, "profile", profile);

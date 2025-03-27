@@ -62,14 +62,27 @@ gint get_saved_candles(GObject *object, const gchar *symbol, const gchar *timefr
             {
                 GObject *candle = g_object_new(G_TYPE_OBJECT, NULL);
                 GDateTime *epoch = g_date_time_new_from_unix_utc(sqlite3_column_int64(stmt, 0));
-                gfloat *open = g_new0(gfloat, 1);
-                gfloat *close = g_new0(gfloat, 1);
-                gfloat *high = g_new0(gfloat, 1);
-                gfloat *low = g_new0(gfloat, 1);
-                *open = (gfloat)sqlite3_column_double(stmt, 1);
-                *close = (gfloat)sqlite3_column_double(stmt, 2);
-                *high = (gfloat)sqlite3_column_double(stmt, 3);
-                *low = (gfloat)sqlite3_column_double(stmt, 4);
+                gdouble *open = g_new0(gdouble, 1);
+                gdouble *close = g_new0(gdouble, 1);
+                gdouble *high = g_new0(gdouble, 1);
+                gdouble *low = g_new0(gdouble, 1);
+                gdouble *openPip = g_new0(gdouble, 1);
+                gdouble *closePip = g_new0(gdouble, 1);
+                gdouble *highPip = g_new0(gdouble, 1);
+                gdouble *lowPip = g_new0(gdouble, 1);
+                gdouble *rangePip = g_new0(gdouble, 1);
+                gdouble *midPip = g_new0(gdouble, 1);
+                *open = (gdouble)sqlite3_column_double(stmt, 1);
+                *close = (gdouble)sqlite3_column_double(stmt, 2);
+                *high = (gdouble)sqlite3_column_double(stmt, 3);
+                *low = (gdouble)sqlite3_column_double(stmt, 4);
+
+                g_object_set_data(candle, "openPip", openPip);
+                g_object_set_data(candle, "closePip", closePip);
+                g_object_set_data(candle, "highPip", highPip);
+                g_object_set_data(candle, "lowPip", lowPip);
+                g_object_set_data(candle, "rangePip", rangePip);
+                g_object_set_data(candle, "midPip", midPip);
 
                 g_object_set_data(candle, "open", open);
                 g_object_set_data(candle, "close", close);
@@ -77,6 +90,7 @@ gint get_saved_candles(GObject *object, const gchar *symbol, const gchar *timefr
                 g_object_set_data(candle, "low", low);
                 g_object_set_data(candle, "epoch", epoch);
                 g_object_set_data(candle, "stat", g_object_get_data(object, "stat"));
+                g_object_set_data(candle, "pip", g_object_get_data(object, "pip"));
                 g_object_set_data(candle, "data", g_object_get_data(object, "data"));
                 g_object_set_data(candle, "time", g_object_get_data(object, "time"));
                 g_list_store_append(store, candle);
@@ -177,13 +191,13 @@ void setup_symbol(GObject *task, sqlite3 *database)
     g_object_set_data(object, "market", g_strdup((const gchar *)sqlite3_column_text(stmt, 9)));
     g_object_set_data(object, "market_display_name", g_strdup((const gchar *)sqlite3_column_text(stmt, 10)));
 
-    gfloat *pip = g_new(gfloat, 1);
-    *pip = (gfloat)sqlite3_column_double(stmt, 11);
+    gdouble *pip = g_new(gdouble, 1);
+    *pip = (gdouble)sqlite3_column_double(stmt, 11);
     // gint degree = g_utf8_strchr(buffer, -1, '1') - g_utf8_strchr(buffer, -1, '.');
     g_object_set_data(object, "pip", pip);
     g_object_set_data(object, "quoted_currency_symbol", g_strdup((const gchar *)sqlite3_column_text(stmt, 12)));
-    gfloat *spot = g_new(gfloat, 1);
-    *spot = (gfloat)sqlite3_column_double(stmt, 13);
+    gdouble *spot = g_new(gdouble, 1);
+    *spot = (gdouble)sqlite3_column_double(stmt, 13);
     g_object_set_data(object, "spot", spot);
     g_object_set_data(object, "spot_age", g_strdup((const gchar *)sqlite3_column_text(stmt, 14)));
     g_object_set_data(object, "spot_percentage_change", g_strdup((const gchar *)sqlite3_column_text(stmt, 15)));
@@ -196,7 +210,7 @@ void setup_symbol(GObject *task, sqlite3 *database)
     sqlite3_finalize(stmt);
 
     g_object_set_data(task, "symbol", symbol);
-    g_print("Symbol: %s\n", (gchar*)g_object_get_data(G_OBJECT(symbol), "display_name"));
+    g_print("Symbol: %s\n", (gchar *)g_object_get_data(G_OBJECT(symbol), "display_name"));
 }
 
 void save_history(GTask *task, gpointer source, gpointer userdata, GCancellable *unused)
@@ -238,10 +252,10 @@ void save_history(GTask *task, gpointer source, gpointer userdata, GCancellable 
     {
         GObject *candle = g_list_model_get_item(model, position);
         GDateTime *epoch = (GDateTime *)g_object_get_data(candle, "epoch");
-        gfloat open = *(gfloat *)g_object_get_data(candle, "open");
-        gfloat close = *(gfloat *)g_object_get_data(candle, "close");
-        gfloat high = *(gfloat *)g_object_get_data(candle, "high");
-        gfloat low = *(gfloat *)g_object_get_data(candle, "low");
+        gdouble open = *(gdouble *)g_object_get_data(candle, "open");
+        gdouble close = *(gdouble *)g_object_get_data(candle, "close");
+        gdouble high = *(gdouble *)g_object_get_data(candle, "high");
+        gdouble low = *(gdouble *)g_object_get_data(candle, "low");
         sqlite3_bind_int64(stmt, 1, g_date_time_to_unix(epoch));
         sqlite3_bind_double(stmt, 2, (gdouble)open);
         sqlite3_bind_double(stmt, 3, (gdouble)close);
@@ -331,9 +345,9 @@ static void create_default_tables(sqlite3 *database)
                                       "is_trading_suspended BOOLEAN,"
                                       "market TEXT,"
                                       "market_display_name TEXT,"
-                                      "pip REAL,"
+                                      "pip DOUBLE,"
                                       "quoted_currency_symbol TEXT,"
-                                      "spot REAL,"
+                                      "spot DOUBLE,"
                                       "spot_age TEXT,"
                                       "spot_percentage_change TEXT,"
                                       "spot_time TEXT,"

@@ -2,7 +2,8 @@
 #define CHART_H
 
 #include "cleanup.h"
-#define CANDLE_WIDTH 32
+#define CANDLE_WIDTH 8
+#define CANDLE_HEIGHT 24
 
 void add_candle_to_chart(gpointer data, gpointer userdata);
 void add_candle(GObject *object, GObject *candle);
