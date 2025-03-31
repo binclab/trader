@@ -76,6 +76,34 @@ void load_changed(WebKitWebView *webview, WebKitLoadEvent event, gpointer userda
     }
 }
 
+gchar *request_last_candle(const gchar *symbol)
+{
+    JsonNode *node = json_node_new(JSON_NODE_OBJECT);
+    JsonObject *object = json_object_new();
+
+    json_object_set_string_member(object, "ticks_history", symbol);
+    json_object_set_int_member(object, "adjust_start_time", 1);
+    json_object_set_int_member(object, "count", 2);
+    json_object_set_string_member(object, "end", "2");
+    json_object_set_string_member(object, "style", "candles");
+    json_object_set_int_member(object, "start", 2);
+
+    JsonObject *passthrough = json_object_new();
+    json_object_set_boolean_member(passthrough, "save", TRUE);
+    json_object_set_object_member(object, "passthrough", passthrough);
+    json_node_init(node, JSON_NODE_OBJECT);
+    json_node_take_object(node, object);
+
+    JsonGenerator *generator = json_generator_new();
+    json_generator_set_root(generator, node);
+    gchar *instruction = json_generator_to_data(generator, NULL);
+
+    g_object_unref(generator);
+    json_node_free(node);
+
+    return instruction;
+}
+
 static gchar *request_tick_history(const gchar *symbol, gint size)
 {
     JsonNode *node = json_node_new(JSON_NODE_OBJECT);
@@ -99,24 +127,29 @@ static gchar *request_tick_history(const gchar *symbol, gint size)
     gchar *instruction = json_generator_to_data(generator, NULL);
 
     g_object_unref(generator);
+    json_node_free(node);
 
     return instruction;
 }
 
 static gchar *request_active_symbols()
 {
-    JsonNode *root = json_node_new(JSON_NODE_OBJECT);
+    JsonNode *node = json_node_new(JSON_NODE_OBJECT);
     JsonObject *object = json_object_new();
 
     json_object_set_string_member(object, "active_symbols", "full");
     json_object_set_string_member(object, "product_type", "basic");
-    json_node_init(root, JSON_NODE_OBJECT);
-    json_node_take_object(root, object);
+    json_node_init(node, JSON_NODE_OBJECT);
+    json_node_take_object(node, object);
 
     JsonGenerator *generator = json_generator_new();
-    json_generator_set_root(generator, root);
+    json_generator_set_root(generator, node);
+    gchar *instruction = json_generator_to_data(generator, NULL);
 
-    return json_generator_to_data(generator, NULL);
+    g_object_unref(generator);
+    json_node_free(node);
+
+    return instruction;
 }
 
 static void process_candle_history(GTask *task, gpointer source, gpointer userdata, GCancellable *unused)
@@ -141,9 +174,10 @@ static void process_candle_history(GTask *task, gpointer source, gpointer userda
     gdouble *rangePip = (gdouble *)g_object_get_data(pip, "range");
     gdouble *midPip = (gdouble *)g_object_get_data(pip, "midpoint");
 
+    gdouble sumPip = 0;
+
     g_object_set_data(pip, "pip", pipValue);
 
-    // gdouble sum
     for (size_t index = 0; index < 1440; index++)
     {
         GObject *candle;
@@ -198,6 +232,8 @@ static void process_candle_history(GTask *task, gpointer source, gpointer userda
         gdouble *high = (gdouble *)g_object_get_data(candle, "high");
         gdouble *low = (gdouble *)g_object_get_data(candle, "low");
 
+        sumPip = sumPip + (*high - *low) / *pipValue;
+
         if (*highest < *high)
             *highest = *high;
 
@@ -206,22 +242,21 @@ static void process_candle_history(GTask *task, gpointer source, gpointer userda
 
         if (index == 1439)
         {
-            gdouble *range = (gdouble *)g_object_get_data(stat, "range");
             gdouble *baseline = (gdouble *)g_object_get_data(stat, "baseline");
             gdouble *factor = (gdouble *)g_object_get_data(pip, "factor");
             gdouble *open = (gdouble *)g_object_get_data(candle, "open");
-            gdouble *close = (gdouble *)g_object_get_data(candle, "close");
             g_object_set_data(object, "open", open);
-            g_object_set_data(object, "close", close);
+            g_object_set_data(object, "close", g_object_get_data(candle, "close"));
             g_object_set_data(object, "high", high);
             g_object_set_data(object, "low", low);
+            g_object_set_data(object, "epoch", g_object_get_data(candle, "epoch"));
 
             *baseline = *open;
             *highestPip = (*highest - *baseline) / *pipValue;
             *lowestPip = (*lowest - *baseline) / *pipValue;
             *midPip = (*highestPip + *lowestPip) / 2;
             *rangePip = *highestPip - *lowestPip;
-            *factor = 0.25 * (572000 / *rangePip);
+            *factor = (48 * index / sumPip);
         }
     }
     if (GTK_IS_FIXED(g_object_get_data(object, "chartfixed")))
@@ -241,13 +276,16 @@ static void handle_socket_response(JsonObject *element, const gchar *type, GObje
     if (g_str_equal("candles", type))
     {
         JsonArray *array = json_object_get_array_member(element, "candles");
-        guint length = json_array_get_length(array);
         JsonObject *request = json_object_get_object_member(element, "echo_req");
-        gint count = json_object_get_int_member(request, "count");
-        gint start = json_object_get_int_member(request, "start");
-        const gchar *end = json_object_get_string_member(request, "end");
-        gchar *endptr;
-        if ((gint)g_strtod(end, &endptr) == length && length == start && start == count)
+        gboolean passthrough = FALSE;
+
+        if (json_object_has_member(request, "passthrough"))
+        {
+            JsonObject *member = json_object_get_object_member(request, "passthrough");
+            passthrough = json_object_get_boolean_member(member, "save");
+        }
+
+        if (passthrough)
         {
             JsonObject *current = json_array_get_object_element(array, 0);
             /*GtkGLArea *area = g_object_get_data(G_OBJECT(bincdata->widget), "area");
@@ -276,7 +314,7 @@ static void handle_socket_response(JsonObject *element, const gchar *type, GObje
     }
     else if (g_str_equal("ohlc", type))
     {
-        // update_candle(bincdata, json_object_get_object_member(element, "ohlc"));
+        update_candle(object, json_object_get_object_member(element, "ohlc"));
     }
     else if (g_str_equal("time", type))
     {
@@ -328,6 +366,18 @@ static void message(SoupWebsocketConnection *connection, SoupWebsocketDataType t
 
 static void closed(SoupWebsocketConnection *connection, gpointer *userdata)
 {
+    GObject *object = G_OBJECT(userdata);
+    switch (soup_websocket_connection_get_close_code(connection))
+    {
+    case 0:
+        GObject *symbol = G_OBJECT(g_object_get_data(object, "symbol"));
+        gchar *name = (gchar *)g_object_get_data(symbol, "display_name");
+        g_print("Symbol %s Not Available\n", name);
+        break;
+
+    default:
+        break;
+    };
     gpointer pointer = g_object_get_data(G_OBJECT(userdata), "connection");
     if (pointer)
     {
@@ -341,14 +391,21 @@ void connected(GObject *source, GAsyncResult *result, gpointer userdata)
     SoupSession *session = SOUP_SESSION(source);
     GError *error = NULL;
     SoupWebsocketConnection *connection = soup_session_websocket_connect_finish(session, result, &error);
-    g_signal_connect(connection, "message", G_CALLBACK(message), userdata);
-    g_signal_connect(connection, "closed", G_CALLBACK(closed), userdata);
-
     if (error)
     {
-        g_printerr("Failed to connect to WebSocket: %s\n", error->message);
+        g_printerr("Check Your Internet: %s\n", error->message);
         g_error_free(error);
         return;
+    }
+    else if (soup_websocket_connection_get_state(connection) != SOUP_WEBSOCKET_STATE_OPEN)
+    {
+        g_warning("WebSocket connection is not open.");
+        return;
+    }
+    else
+    {
+        g_signal_connect(connection, "message", G_CALLBACK(message), userdata);
+        g_signal_connect(connection, "closed", G_CALLBACK(closed), userdata);
     }
 
     if (!g_object_get_data(object, "connection"))
@@ -357,12 +414,6 @@ void connected(GObject *source, GAsyncResult *result, gpointer userdata)
     }
 
     gpointer pointer = g_object_get_data(object, "symbol");
-
-    if (soup_websocket_connection_get_state(connection) != SOUP_WEBSOCKET_STATE_OPEN)
-    {
-        g_warning("WebSocket connection is not open.");
-        return;
-    }
 
     if (g_object_get_data(object, "fetch"))
     {

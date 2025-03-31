@@ -2,6 +2,124 @@
 #include "session.h"
 #include "chart.h"
 
+void update_candle(GObject *object, JsonObject *ohlc)
+{
+    gint64 epochValue = json_object_get_int_member(ohlc, "epoch");
+    gdouble openValue = g_ascii_strtod(json_object_get_string_member(ohlc, "open"), NULL);
+    gdouble closeValue = g_ascii_strtod(json_object_get_string_member(ohlc, "close"), NULL);
+    gdouble highValue = g_ascii_strtod(json_object_get_string_member(ohlc, "high"), NULL);
+    gdouble lowValue = g_ascii_strtod(json_object_get_string_member(ohlc, "low"), NULL);
+
+    gpointer pointer = g_object_get_data(object, "timeframe");
+    const gchar *timeframe = gtk_string_object_get_string(GTK_STRING_OBJECT(pointer));
+    GListStore *store = G_LIST_STORE(g_object_get_data(object, "candles"));
+    pointer = g_object_get_data(object, "symbol");
+    const gchar *symbol = gtk_string_object_get_string(GTK_STRING_OBJECT(pointer));
+    pointer = g_object_get_data(object, "connection");
+    SoupWebsocketConnection *connection = SOUP_WEBSOCKET_CONNECTION(pointer);
+    GtkGLArea *area = GTK_GL_AREA(g_object_get_data(object, "widget"));
+
+    GDateTime *epoch = g_date_time_new_from_unix_utc(epochValue);
+
+    if (g_str_equal(timeframe, "M1") && g_date_time_get_second(epoch) == 0)
+    {
+        GObject *candle = g_object_new(G_TYPE_OBJECT, NULL);
+        gdouble *open = g_new0(gdouble, 1);
+        gdouble *close = g_new0(gdouble, 1);
+        gdouble *high = g_new0(gdouble, 1);
+        gdouble *low = g_new0(gdouble, 1);
+        gdouble *openPip = g_new0(gdouble, 1);
+        gdouble *closePip = g_new0(gdouble, 1);
+        gdouble *highPip = g_new0(gdouble, 1);
+        gdouble *lowPip = g_new0(gdouble, 1);
+        gdouble *rangePip = g_new0(gdouble, 1);
+        gdouble *midPip = g_new0(gdouble, 1);
+        *open = openValue;
+        *close = closeValue;
+        *high = highValue;
+        *low = lowValue;
+
+        g_object_set_data(candle, "openPip", openPip);
+        g_object_set_data(candle, "closePip", closePip);
+        g_object_set_data(candle, "highPip", highPip);
+        g_object_set_data(candle, "lowPip", lowPip);
+        g_object_set_data(candle, "rangePip", rangePip);
+        g_object_set_data(candle, "midPip", midPip);
+        g_object_set_data(candle, "open", open);
+        g_object_set_data(candle, "close", close);
+        g_object_set_data(candle, "high", high);
+        g_object_set_data(candle, "low", low);
+        g_object_set_data(candle, "epoch", epoch);
+        g_object_set_data(candle, "stat", g_object_get_data(object, "stat"));
+        g_object_set_data(candle, "pip", g_object_get_data(object, "pip"));
+        g_object_set_data(candle, "data", g_object_get_data(object, "data"));
+        g_object_set_data(candle, "time", g_object_get_data(object, "time"));
+
+        pointer = g_object_get_data(object, "chartfixed");
+        pointer = g_object_get_data(G_OBJECT(pointer), "store");
+        GListStore *list = G_LIST_STORE(g_object_get_data(G_OBJECT(pointer), "buffer"));
+        GListModel *model = G_LIST_MODEL(list);
+        gint size = g_list_model_get_n_items(G_LIST_MODEL(list));
+
+        const gchar *instruction = request_last_candle(symbol);
+        soup_websocket_connection_send_text(connection, instruction);
+
+        if (GTK_IS_GL_AREA(area))
+        {
+            for (gint index = 0; index <= size; index++)
+            {
+                gboolean current = index == size;
+                pointer = current ? candle : g_list_model_get_item(model, index);
+                g_list_store_append(store, pointer);
+                GObject *userdata = add_candle(object, pointer);
+                add_widget(object, userdata, current);
+                if (current)
+                {
+                    g_object_set_data(object, "open", open);
+                    g_object_set_data(object, "close", close);
+                    g_object_set_data(object, "high", high);
+                    g_object_set_data(object, "low", low);
+                    g_object_set_data(object, "epoch", epoch);
+                }
+            }
+            g_list_store_remove_all(list);
+        }
+        else
+        {
+            g_list_store_append(list, candle);
+        }
+
+        // gtk_fixed_put(fixed, bincdata->widget, 0, 0);
+        // bincdata->widget = create_canvas(candle);
+        // gtk_box_append(bincdata->data->chart, bincdata->widget);
+        // gtk_fixed_put(candle->data->fixed, bincdata->widget, candle->data->abscissa, candle->price->close - candle->data->baseline);
+        // candle->data->abscissa += CANDLE_WIDTH;
+        // gtk_range_set_value(bincdata->data->scale, candle->price->close);
+        // gtk_viewport_scroll_to(bincdata->timeport, bincdata->timegravity, bincdata->scrollinfo);
+        // gtk_adjustment_set_value(bincdata->adjustment, gtk_adjustment_get_upper(bincdata->adjustment));
+        // gtk_widget_grab_focus(bincdata->timegravity);
+    }
+
+    if (GTK_IS_GL_AREA(area))
+    {
+        *(gdouble *)g_object_get_data(object, "open") = openValue;
+        *(gdouble *)g_object_get_data(object, "close") = closeValue;
+        *(gdouble *)g_object_get_data(object, "high") = highValue;
+        *(gdouble *)g_object_get_data(object, "low") = lowValue;
+        gtk_gl_area_queue_render(area);
+    }
+    else
+    {
+        GListModel *model = G_LIST_MODEL(store);
+        gint count = g_list_model_get_n_items(model);
+        GObject *candle = G_OBJECT(g_list_model_get_item(model, count - 1));
+        *(gdouble *)g_object_get_data(candle, "open") = openValue;
+        *(gdouble *)g_object_get_data(candle, "close") = closeValue;
+        *(gdouble *)g_object_get_data(candle, "high") = highValue;
+        *(gdouble *)g_object_get_data(candle, "low") = lowValue;
+    }
+}
+
 static GLuint compile_shader(GLenum type, const gchar *name)
 {
     gchar *resourcePath = g_strdup_printf("/com/binclab/trader/gl/%s", name);
@@ -231,6 +349,7 @@ static void setup_content(GObject *object, GtkBox *parent)
     gtk_widget_set_margin_bottom(chartscroll, 48);
     gtk_overlay_set_child(overlay, chartscroll);
     gtk_widget_set_name(chartport, "chartport");
+    // gtk_widget_set_margin_end(chartport, 128);
     g_object_set_data(object, "chartport", chartport);
     g_object_set_data(object, "scaleport", scaleport);
     g_object_set_data(object, "timeport", timeport);
@@ -242,9 +361,11 @@ static void setup_content(GObject *object, GtkBox *parent)
     GtkViewport *viewport = GTK_VIEWPORT(chartport);
     GObject *store = G_OBJECT(g_list_store_new(GTK_TYPE_WIDGET));
     GtkFixed *fixed = GTK_FIXED(widget);
+    GListStore *list = g_list_store_new(G_TYPE_OBJECT);
     gtk_widget_set_overflow(widget, GTK_OVERFLOW_VISIBLE);
     gtk_viewport_set_child(viewport, widget);
     g_object_set_data(object, "chartfixed", widget);
+    g_object_set_data(store, "buffer", list);
     g_object_set_data(store, "position", GINT_TO_POINTER(1000));
     g_object_set_data(G_OBJECT(widget), "store", store);
     widget = gtk_gl_area_new();
@@ -275,6 +396,7 @@ static void setup_content(GObject *object, GtkBox *parent)
     g_object_set_data(object, "timefixed", widget);
     g_object_set_data(G_OBJECT(widget), "store", g_list_store_new(GTK_TYPE_WIDGET));
     gtk_widget_set_name(timeport, "timeport");
+    // gtk_widget_set_margin_end(timeport, 128);
 
     gtk_overlay_add_overlay(overlay, scalescroll);
     gtk_widget_set_halign(scalescroll, GTK_ALIGN_END);

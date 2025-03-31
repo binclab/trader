@@ -52,7 +52,7 @@ gint get_saved_candles(GObject *object, const gchar *symbol, const gchar *timefr
             gchar *affix = "ORDER BY epoch ASC LIMIT -1 OFFSET";
             maxlength = 64;
             instruction = (gchar *)g_malloc0(maxlength);
-            gint count = rows - 1441 + fetch;
+            gint count = rows - 1440 + fetch;
             g_snprintf(instruction, maxlength, "%s \"%s\" %s %i;", prefix, timeframe, affix, count);
             sqlite3_prepare_v2(database, instruction, -1, &stmt, NULL);
             g_clear_pointer(&instruction, g_free);
@@ -94,7 +94,6 @@ gint get_saved_candles(GObject *object, const gchar *symbol, const gchar *timefr
                 g_object_set_data(candle, "data", g_object_get_data(object, "data"));
                 g_object_set_data(candle, "time", g_object_get_data(object, "time"));
                 g_list_store_append(store, candle);
-                g_date_time_new_now_local();
             }
             sqlite3_finalize(stmt);
             g_print("History loaded from Database\n");
@@ -218,6 +217,7 @@ void save_history(GTask *task, gpointer source, gpointer userdata, GCancellable 
     GObject *object = G_OBJECT(source);
     gpointer pointer = g_object_get_data(object, "symbol");
     const gchar *symbol = gtk_string_object_get_string(GTK_STRING_OBJECT(pointer));
+    const gchar *name = g_object_get_data(G_OBJECT(pointer), "display_name");
     pointer = g_object_get_data(object, "timeframe");
     const gchar *home = gtk_string_object_get_string(GTK_STRING_OBJECT(object));
     const gchar *timeframe = gtk_string_object_get_string(GTK_STRING_OBJECT(pointer));
@@ -247,8 +247,8 @@ void save_history(GTask *task, gpointer source, gpointer userdata, GCancellable 
     gint count = g_list_model_get_n_items(model);
 
     gint start = count - GPOINTER_TO_INT(userdata);
-    g_print("Saving %s history\n", symbol);
-    for (gint position = start; start >= 0 && position < count; position++)
+    g_print("Saving %s history\n", name);
+    for (gint position = start; start >= 0 && position < count - 1; position++)
     {
         GObject *candle = g_list_model_get_item(model, position);
         GDateTime *epoch = (GDateTime *)g_object_get_data(candle, "epoch");
@@ -264,7 +264,7 @@ void save_history(GTask *task, gpointer source, gpointer userdata, GCancellable 
         sqlite3_step(stmt);
         sqlite3_reset(stmt);
     }
-    g_print("%s history saved\n", symbol);
+    g_print("%s history saved\n", name);
     sqlite3_finalize(stmt);
 }
 
@@ -486,13 +486,13 @@ void setup_user_interface(GObject *object)
         if (sqlite3_open(path, &database) == SQLITE_OK)
         {
             create_default_tables(database);
-            g_object_set_data(object, "fetch", GINT_TO_POINTER(1));
+            g_object_set_data(object, "fetch", GINT_TO_POINTER(TRUE));
         }
     }
     sqlite3_close(database);
     SoupSession *session = soup_session_new();
     g_object_set_data(object, "session", session);
+    g_object_set_data(object, "message", message);
     soup_session_websocket_connect_async(
         session, message, NULL, NULL, G_PRIORITY_HIGH, NULL, connected, object);
-    g_object_unref(message);
 }

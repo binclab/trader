@@ -1,6 +1,6 @@
 #include "chart.h"
 
-static void scroll_to_current_candle(GObject *object, gdouble value, gboolean vertical)
+void scroll_to_current_candle(GObject *object, gdouble value, gboolean vertical)
 {
     GtkAdjustment *chartadjustment = vertical ? g_object_get_data(object, "chartvadjustment")
                                               : g_object_get_data(object, "charthadjustment");
@@ -68,9 +68,9 @@ static void bind_vertices(GtkWidget *widget, GObject *candle)
     {
         scroll_to_current_candle(object, position);
     }*/
-    if (ordinate < 0)
+    if (ordinate < 0 && GPOINTER_TO_INT(g_object_get_data(object, "show")))
     {
-        gint margin = (gint)ceil(abs(ordinate) + CANDLE_WIDTH);
+        gint margin = (gint)ceil(abs(ordinate) - height + CANDLE_WIDTH * 5);
         if (gtk_widget_get_margin_top(widget) < margin)
             gtk_widget_set_margin_top(widget, margin);
     }
@@ -154,6 +154,22 @@ static gboolean render_canvas(GtkGLArea *area, GdkGLContext *context, gpointer u
     return TRUE;
 }
 
+void add_widget(GObject *object, GObject *userdata, gboolean current)
+{
+    GtkWidget *label = GTK_WIDGET(g_object_get_data(userdata, "label"));
+    GtkWidget *widget = GTK_WIDGET(userdata);
+    gint position = GPOINTER_TO_INT(g_object_get_data(userdata, "position"));
+    gdouble ordinate = *(gdouble *)g_object_get_data(userdata, "ordinate");
+    g_object_set_data(userdata, "show", GINT_TO_POINTER(TRUE));
+    gtk_fixed_put(GTK_FIXED(g_object_get_data(object, "timefixed")), label, position, 0);
+    gtk_fixed_put(GTK_FIXED(g_object_get_data(object, "chartfixed")), widget, position, ordinate);
+    scroll_to_current_candle(userdata, (gdouble)position, FALSE);
+    if (current)
+    {
+        g_object_set_data(object, "widget", widget);
+    }
+}
+
 gboolean add_widgets(gpointer userdata)
 {
     GObject *object = G_OBJECT(userdata);
@@ -170,14 +186,8 @@ gboolean add_widgets(gpointer userdata)
     gdouble denominator = (gdouble)count - 1000;
     for (gint index = start; index < end; index++)
     {
-        GObject *area = G_OBJECT(g_list_model_get_item(model, index));
-        GtkWidget *label = GTK_WIDGET(g_object_get_data(area, "label"));
-        GtkWidget *widget = GTK_WIDGET(area);
-        gint position = index * CANDLE_WIDTH;
-        gdouble ordinate = *(gdouble *)g_object_get_data(area, "ordinate");
-        gtk_fixed_put(timefixed, label, position, 0);
-        gtk_fixed_put(GTK_FIXED(chartfixed), widget, position, ordinate);
-        scroll_to_current_candle(area, (gdouble)position, FALSE);
+        GObject *item = G_OBJECT(g_list_model_get_item(model, index));
+        add_widget(G_OBJECT(userdata), item, index == 1439);
         gtk_progress_bar_set_fraction(progress, ((gdouble)index - 1000) / denominator);
     }
     g_object_set_data(object, "position", GINT_TO_POINTER(end));
@@ -199,7 +209,7 @@ void que_widgets(GObject *source, GAsyncResult *result, gpointer userdata)
     g_idle_add(add_widgets, source);
 }
 
-void add_candle(GObject *object, GObject *candle)
+GObject *add_candle(GObject *object, GObject *candle)
 {
     GtkWidget *widget = gtk_gl_area_new();
     GtkWidget *label = gtk_label_new(NULL);
@@ -252,7 +262,7 @@ void add_candle(GObject *object, GObject *candle)
     GObject *pointer = G_OBJECT(g_object_get_data(object, "timefixed"));
     gint upper = (gint)gtk_adjustment_get_upper(charthadjustment);
     gint position = GPOINTER_TO_INT(g_object_get_data(pointer, "position")) + CANDLE_WIDTH;
-    gpointer value = GINT_TO_POINTER(MAX(upper, position));
+    gpointer value = GINT_TO_POINTER(position);
     g_object_set_data(pointer, "position", value);
     g_object_set_data(userdata, "timefixed", pointer);
 
@@ -269,4 +279,5 @@ void add_candle(GObject *object, GObject *candle)
     g_object_set_data(userdata, "ordinate", ordinate);
     g_object_set_data(userdata, "position", value);
     g_object_set_data(userdata, "label", label);
+    return userdata;
 }

@@ -17,7 +17,7 @@
 					"base": "$gcc",
 					"fileLocation": [
 						"relative",
-						"${workspaceFolder}",
+						"${workspaceFolder}"
 					]
 				}
 			],
@@ -28,7 +28,8 @@
 			"label": "Build",
 			"command": "/usr/bin/ninja",
 			"args": [
-				"-C", ".build"
+				"-C",
+				".build"
 			],
 			"options": {
 				"cwd": "${workspaceFolder}"
@@ -38,7 +39,7 @@
 					"base": "$gcc",
 					"fileLocation": [
 						"relative",
-						"${workspaceFolder}/trader",
+						"${workspaceFolder}/trader"
 					]
 				}
 			],
@@ -46,6 +47,6 @@
 				"kind": "build",
 				"isDefault": true
 			}
-		},
+		}
 	],
 }

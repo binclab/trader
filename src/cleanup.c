@@ -108,12 +108,6 @@ static void remove_data(GTask *task, gpointer source, gpointer userdata, GCancel
         g_object_unref(pointer);
     }
 
-    pointer = g_object_get_data(object, "epoch");
-    if (pointer)
-    {
-        g_object_unref(pointer);
-    }
-
     pointer = g_object_get_data(object, "token");
     if (pointer)
     {
@@ -271,6 +265,10 @@ void free_list(GTask *task, gpointer source, gpointer userdata, GCancellable *un
 {
     GListModel *model = G_LIST_MODEL(userdata);
 
+    gpointer pointer = g_object_get_data(G_OBJECT(userdata), "buffer");
+    if (pointer)
+        g_object_unref(pointer);
+
     if (G_IS_LIST_MODEL(model))
     {
         gint count = g_list_model_get_n_items(model);
@@ -280,7 +278,7 @@ void free_list(GTask *task, gpointer source, gpointer userdata, GCancellable *un
             GObject *item = g_list_model_get_item(model, index);
             if (item)
             {
-                gpointer pointer = g_object_get_data(item, "open");
+                pointer = g_object_get_data(item, "open");
                 if (pointer)
                     g_free(pointer);
                 pointer = g_object_get_data(item, "close");
