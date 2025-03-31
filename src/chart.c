@@ -265,6 +265,7 @@ GObject *add_candle(GObject *object, GObject *candle)
     gpointer value = GINT_TO_POINTER(position);
     g_object_set_data(pointer, "position", value);
     g_object_set_data(userdata, "timefixed", pointer);
+    g_object_set_data(candle, "area", widget);
 
     g_list_store_append(G_LIST_STORE(g_object_get_data(pointer, "store")), label);
 

@@ -271,8 +271,9 @@ static void process_candle_history(GTask *task, gpointer source, gpointer userda
     g_object_unref(subtask);
 }
 
-static void handle_socket_response(JsonObject *element, const gchar *type, GObject *object)
+static void handle_socket_response(GObject *object, JsonObject *element)
 {
+    const gchar *type = json_object_get_string_member(element, "msg_type");
     if (g_str_equal("candles", type))
     {
         JsonArray *array = json_object_get_array_member(element, "candles");
@@ -287,7 +288,29 @@ static void handle_socket_response(JsonObject *element, const gchar *type, GObje
 
         if (passthrough)
         {
-            JsonObject *current = json_array_get_object_element(array, 0);
+            GListModel *model = G_LIST_MODEL(g_object_get_data(object, "candles"));
+            gint position = g_list_model_get_n_items(model) - 2;
+            gpointer pointer = g_list_model_get_item(model, position);
+            GObject *item = G_OBJECT(pointer);
+            JsonObject *node = json_array_get_object_element(array, 1);
+
+            gdouble *openValue = (gdouble *)g_object_get_data(item, "open");
+            gdouble *closeValue = (gdouble *)g_object_get_data(item, "close");
+            gdouble *highValue = (gdouble *)g_object_get_data(item, "high");
+            gdouble *lowValue = (gdouble *)g_object_get_data(item, "low");
+            *openValue = json_object_get_double_member(node, "open");
+            *closeValue = json_object_get_double_member(node, "close");
+            *highValue = json_object_get_double_member(node, "high");
+            *lowValue = json_object_get_double_member(node, "low");
+            pointer = g_object_get_data(item, "area");
+            
+            if (GTK_IS_GL_AREA(pointer))
+                gtk_gl_area_queue_render(GTK_GL_AREA(pointer));
+            GTask *subtask = g_task_new(object, NULL, NULL, NULL);
+            g_task_set_task_data(subtask, GINT_TO_POINTER(position), NULL);
+            g_task_run_in_thread(subtask, save_history);
+            g_object_unref(subtask);
+
             /*GtkGLArea *area = g_object_get_data(G_OBJECT(bincdata->widget), "area");
             BincCandle *candle = g_object_get_data(G_OBJECT(area), "candle");
             candle->price->close = json_object_get_double_member(current, "close");
@@ -348,9 +371,8 @@ static void message(SoupWebsocketConnection *connection, SoupWebsocketDataType t
         }
         else
         {
-            JsonObject *element = json_node_get_object(json_parser_get_root(parser));
-            const gchar *type = json_object_get_string_member(element, "msg_type");
-            handle_socket_response(element, type, object);
+            JsonNode *node = json_parser_get_root(parser);
+            handle_socket_response(object, json_node_get_object(node));
         }
     }
     else

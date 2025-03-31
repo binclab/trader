@@ -437,6 +437,7 @@ void setup_user_interface(GObject *object)
 
     const char *uri = "wss://ws.derivws.com/websockets/v3?app_id=66477";
     SoupMessage *message = soup_message_new(SOUP_METHOD_GET, uri);
+    gtk_window_present(GTK_WINDOW(g_object_get_data(object, "window")));
 
     if (exists && sqlite3_open(path, &database) == SQLITE_OK)
     {
@@ -463,8 +464,6 @@ void setup_user_interface(GObject *object)
         GObject *item = g_list_model_get_item(G_LIST_MODEL(profile), id);
         gchar *token = G_IS_OBJECT(item) ? g_object_get_data(item, "token") : NULL;
 
-        gtk_window_present(GTK_WINDOW(g_object_get_data(object, "window")));
-
         if (token)
         {
             gsize maxlength = 8 + strlen(token);
@@ -486,6 +485,7 @@ void setup_user_interface(GObject *object)
         if (sqlite3_open(path, &database) == SQLITE_OK)
         {
             create_default_tables(database);
+            setup_webview(object);
             g_object_set_data(object, "fetch", GINT_TO_POINTER(TRUE));
         }
     }
