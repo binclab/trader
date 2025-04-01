@@ -57,7 +57,8 @@ void update_candle(GObject *object, JsonObject *ohlc)
 
         pointer = g_object_get_data(object, "chartfixed");
         pointer = g_object_get_data(G_OBJECT(pointer), "store");
-        GListStore *list = G_LIST_STORE(g_object_get_data(G_OBJECT(pointer), "buffer"));
+        pointer = g_object_get_data(G_OBJECT(pointer), "buffer");
+        GListStore *list = G_LIST_STORE(pointer);
         GListModel *model = G_LIST_MODEL(list);
         gint size = g_list_model_get_n_items(G_LIST_MODEL(list));
 
@@ -71,16 +72,8 @@ void update_candle(GObject *object, JsonObject *ohlc)
                 gboolean current = index == size;
                 pointer = current ? candle : g_list_model_get_item(model, index);
                 g_list_store_append(store, pointer);
-                GObject *userdata = add_candle(object, pointer);
-                add_widget(object, userdata, current);
-                if (current)
-                {
-                    g_object_set_data(object, "open", open);
-                    g_object_set_data(object, "close", close);
-                    g_object_set_data(object, "high", high);
-                    g_object_set_data(object, "low", low);
-                    g_object_set_data(object, "epoch", epoch);
-                }
+                GObject *userdata = add_candle(object, pointer, current);
+                add_widget(object, userdata);
             }
             g_list_store_remove_all(list);
         }
@@ -88,19 +81,8 @@ void update_candle(GObject *object, JsonObject *ohlc)
         {
             g_list_store_append(list, candle);
         }
-
-        // gtk_fixed_put(fixed, bincdata->widget, 0, 0);
-        // bincdata->widget = create_canvas(candle);
-        // gtk_box_append(bincdata->data->chart, bincdata->widget);
-        // gtk_fixed_put(candle->data->fixed, bincdata->widget, candle->data->abscissa, candle->price->close - candle->data->baseline);
-        // candle->data->abscissa += CANDLE_WIDTH;
-        // gtk_range_set_value(bincdata->data->scale, candle->price->close);
-        // gtk_viewport_scroll_to(bincdata->timeport, bincdata->timegravity, bincdata->scrollinfo);
-        // gtk_adjustment_set_value(bincdata->adjustment, gtk_adjustment_get_upper(bincdata->adjustment));
-        // gtk_widget_grab_focus(bincdata->timegravity);
     }
-
-    if (GTK_IS_GL_AREA(area))
+    else if (GTK_IS_GL_AREA(area))
     {
         *(gdouble *)g_object_get_data(object, "open") = openValue;
         *(gdouble *)g_object_get_data(object, "close") = closeValue;

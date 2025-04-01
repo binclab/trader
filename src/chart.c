@@ -16,12 +16,14 @@ void scroll_to_current_candle(GObject *object, gdouble value, gboolean vertical)
 static void bind_vertices(GtkWidget *widget, GObject *candle)
 {
     GObject *pip = G_OBJECT(g_object_get_data(candle, "pip"));
+    GObject *stat = G_OBJECT(g_object_get_data(candle, "stat"));
     const gdouble closePrice = *(gdouble *)g_object_get_data(candle, "close");
     const gdouble openPrice = *(gdouble *)g_object_get_data(candle, "open");
     const gdouble highPrice = *(gdouble *)g_object_get_data(candle, "high");
     const gdouble lowPrice = *(gdouble *)g_object_get_data(candle, "low");
     const gdouble pipValue = *(gdouble *)g_object_get_data(pip, "pip");
     const gdouble factor = *(gdouble *)g_object_get_data(pip, "factor");
+    const gdouble baseline = *(gdouble *)g_object_get_data(stat, "baseline");
 
     gdouble *closePip = (gdouble *)g_object_get_data(candle, "closePip");
     gdouble *openPip = (gdouble *)g_object_get_data(candle, "openPip");
@@ -53,13 +55,18 @@ static void bind_vertices(GtkWidget *widget, GObject *candle)
     GLfloat thin = 0.2f;
     GLfloat thick = 0.75f;
 
+    GObject *object = G_OBJECT(widget);
+    gdouble *ordinate = (gdouble *)g_object_get_data(object, "ordinate");
+
+    GtkWidget *fixed = GTK_WIDGET(g_object_get_data(object, "chartfixed"));
+
     if (height > gtk_widget_get_height(widget))
     {
         gtk_widget_set_size_request(widget, CANDLE_WIDTH, height);
+        *ordinate = factor * ((baseline - lowPrice) / pipValue) - height;
+        gdouble abscissa = GPOINTER_TO_INT(g_object_get_data(object, "position"));
+        gtk_fixed_move(GTK_FIXED(fixed), widget, abscissa, *ordinate);
     }
-    GObject *object = G_OBJECT(widget);
-    const gdouble ordinate = *(gdouble *)g_object_get_data(object, "ordinate");
-    widget = GTK_WIDGET(g_object_get_data(object, "chartfixed"));
 
     /*GtkAdjustment *charthadjustment = g_object_get_data(object, "charthadjustment");
     gint position = GPOINTER_TO_INT(g_object_get_data(object, "position"));
@@ -68,15 +75,15 @@ static void bind_vertices(GtkWidget *widget, GObject *candle)
     {
         scroll_to_current_candle(object, position);
     }*/
-    if (ordinate < 0 && GPOINTER_TO_INT(g_object_get_data(object, "show")))
+    if (*ordinate < 0 && GPOINTER_TO_INT(g_object_get_data(object, "show")))
     {
-        gint margin = (gint)ceil(abs(ordinate) - height + CANDLE_WIDTH * 5);
-        if (gtk_widget_get_margin_top(widget) < margin)
-            gtk_widget_set_margin_top(widget, margin);
+        gint margin = (gint)ceil(fabs(*ordinate) - height + CANDLE_WIDTH * 5);
+        if (gtk_widget_get_margin_top(fixed) < margin)
+            gtk_widget_set_margin_top(fixed, margin);
     }
 
     GtkAdjustment *chartvadjustment = g_object_get_data(object, "chartvadjustment");
-    gint position = gtk_widget_get_margin_top(widget) + ordinate;
+    gint position = gtk_widget_get_margin_top(fixed) + *ordinate;
     gtk_adjustment_set_value(chartvadjustment, position);
 
     GLfloat vertices[126] = {
@@ -144,9 +151,11 @@ static gboolean render_canvas(GtkGLArea *area, GdkGLContext *context, gpointer u
 
     GLint pos_attr = glGetAttribLocation(program, "position");
     GLint col_attr = glGetAttribLocation(program, "color");
-    glVertexAttribPointer(pos_attr, 3, GL_FLOAT, GL_FALSE, 7 * sizeof(GLfloat), (void *)0);
+    GLsizei stride = 7 * sizeof(GLfloat);
+    const void *pointer = (void *)(3 * sizeof(GLfloat));
+    glVertexAttribPointer(pos_attr, 3, GL_FLOAT, GL_FALSE, stride, (void *)0);
     glEnableVertexAttribArray(pos_attr);
-    glVertexAttribPointer(col_attr, 4, GL_FLOAT, GL_FALSE, 7 * sizeof(GLfloat), (void *)(3 * sizeof(GLfloat)));
+    glVertexAttribPointer(col_attr, 4, GL_FLOAT, GL_FALSE, stride, pointer);
     glEnableVertexAttribArray(col_attr);
 
     glDrawArrays(GL_TRIANGLES, 0, 18);
@@ -154,20 +163,18 @@ static gboolean render_canvas(GtkGLArea *area, GdkGLContext *context, gpointer u
     return TRUE;
 }
 
-void add_widget(GObject *object, GObject *userdata, gboolean current)
+void add_widget(GObject *object, GObject *userdata)
 {
     GtkWidget *label = GTK_WIDGET(g_object_get_data(userdata, "label"));
     GtkWidget *widget = GTK_WIDGET(userdata);
     gint position = GPOINTER_TO_INT(g_object_get_data(userdata, "position"));
     gdouble ordinate = *(gdouble *)g_object_get_data(userdata, "ordinate");
     g_object_set_data(userdata, "show", GINT_TO_POINTER(TRUE));
-    gtk_fixed_put(GTK_FIXED(g_object_get_data(object, "timefixed")), label, position, 0);
-    gtk_fixed_put(GTK_FIXED(g_object_get_data(object, "chartfixed")), widget, position, ordinate);
+    GtkFixed *timefixed = GTK_FIXED(g_object_get_data(object, "timefixed"));
+    GtkFixed *chartfixed = GTK_FIXED(g_object_get_data(object, "chartfixed"));
+    gtk_fixed_put(timefixed, label, position, 0);
+    gtk_fixed_put(chartfixed, widget, position, ordinate);
     scroll_to_current_candle(userdata, (gdouble)position, FALSE);
-    if (current)
-    {
-        g_object_set_data(object, "widget", widget);
-    }
 }
 
 gboolean add_widgets(gpointer userdata)
@@ -209,7 +216,7 @@ void que_widgets(GObject *source, GAsyncResult *result, gpointer userdata)
     g_idle_add(add_widgets, source);
 }
 
-GObject *add_candle(GObject *object, GObject *candle)
+GObject *add_candle(GObject *object, GObject *candle, gboolean current)
 {
     GtkWidget *widget = gtk_gl_area_new();
     GtkWidget *label = gtk_label_new(NULL);
@@ -241,10 +248,22 @@ GObject *add_candle(GObject *object, GObject *candle)
     GObject *pip = G_OBJECT(g_object_get_data(candle, "pip"));
     GObject *stat = G_OBJECT(g_object_get_data(candle, "stat"));
     const gdouble baseline = *(gdouble *)g_object_get_data(stat, "baseline");
-    const gdouble highPrice = *(gdouble *)g_object_get_data(candle, "high");
-    const gdouble lowPrice = *(gdouble *)g_object_get_data(candle, "low");
+    gdouble *highPrice = (gdouble *)g_object_get_data(candle, "high");
+    gdouble *lowPrice = (gdouble *)g_object_get_data(candle, "low");
+    gdouble *openPrice = (gdouble *)g_object_get_data(candle, "open");
+    gdouble *openPrice = (gdouble *)g_object_get_data(candle, "open");
     const gdouble pipValue = *(gdouble *)g_object_get_data(pip, "pip");
     const gdouble factor = *(gdouble *)g_object_get_data(pip, "factor");
+
+    if (current)
+    {
+        g_object_set_data(object, "widget", widget);
+        g_object_set_data(object, "open", openPrice);
+        g_object_set_data(object, "close", closePrice);
+        g_object_set_data(object, "high",  highPrice);
+        g_object_set_data(object, "low", lowPrice);
+        g_object_set_data(object, "epoch", utctime);
+    }
     gdouble *ordinate = (gdouble *)g_new0(gdouble, 1);
 
     gint height = (gint)round(2 * factor * ((highPrice - lowPrice) / pipValue));
