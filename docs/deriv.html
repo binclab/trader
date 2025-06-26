@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Forward Deriv OAuth</title>
+  <style>
+    body { font-family: sans-serif; padding: 2em; }
+    button { padding: 0.6em 1.2em; font-size: 1em; }
+    #status { margin-top: 1em; font-weight: bold; }
+  </style>
+</head>
+<body>
+
+<h1>Forward Deriv OAuth Data</h1>
+<p>Click the button below to enter your local server address and forward the token data.</p>
+
+<button id="forwardBtn">Enter Server Address</button>
+<div id="status">Awaiting action…</div>
+
+<script>
+  document.getElementById("forwardBtn").addEventListener("click", () => {
+    const server = prompt("Enter your local server address (e.g. http://192.168.1.100:3000)");
+    if (!server) {
+      document.getElementById("status").textContent = "❌ No server address entered.";
+      return;
+    }
+
+    const query = window.location.search; // includes '?'
+    const redirectUrl = `${server}/relay${query}`;
+
+    document.getElementById("status").textContent = "🔄 Redirecting to server…";
+    window.location.href = redirectUrl;
+  });
+</script>
+
+</body>
+</html>
+
