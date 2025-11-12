@@ -18,7 +18,8 @@ if (state) {
   const [ip, port] = decoded.split(':');
 
   const query = window.location.search;
-  const redirectUrl = `http://${ip}:${port}/${query}`;
+  const protocol = port === 443 || port === '443' ? 'https' : 'http';
+  const redirectUrl = `${protocol}://${ip}:${port}/${query}`;
 
   const statusDiv = document.createElement('div');
   statusDiv.id = 'status';
