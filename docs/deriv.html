@@ -9,27 +9,24 @@
   </style>
 </head>
 <body>
-
-<h1>Forward Deriv OAuth Data</h1>
-<p>Click the button below to enter your local server address and forward the token data.</p>
-
-<button id="forwardBtn">Enter Server Address</button>
-<div id="status">Awaiting action…</div>
-
 <script>
-  document.getElementById("forwardBtn").addEventListener("click", () => {
-    const server = prompt("Enter your local server address (e.g. 192.168.1.100:8080)");
-    if (!server) {
-      document.getElementById("status").textContent = "❌ No server address entered.";
-      return;
-    }
+const params = new URLSearchParams(window.location.search);
+const state = params.get('state'); // e.g. "192.168.1.100%3A80"
 
-    const query = window.location.search; // includes '?'
-    const redirectUrl = `http://${server}/${query}`;
+if (state) {
+  const decoded = decodeURIComponent(state); // "192.168.1.100:80"
+  const [ip, port] = decoded.split(':');
 
-    document.getElementById("status").textContent = "🔄 Redirecting to server…";
-    window.location.href = redirectUrl;
-  });
+  const query = window.location.search;
+  const redirectUrl = `http://${ip}:${port}/${query}`;
+
+  const statusDiv = document.createElement('div');
+  statusDiv.id = 'status';
+  statusDiv.textContent = "🔄 Redirecting to server…";
+  document.body.appendChild(statusDiv);
+
+  window.location.href = redirectUrl;
+}
 </script>
 
 </body>
