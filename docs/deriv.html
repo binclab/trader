@@ -1,35 +1,77 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Forward Deriv OAuth</title>
+  <title>Deriv OAuth Redirect</title>
   <style>
     body { font-family: sans-serif; padding: 2em; }
-    button { padding: 0.6em 1.2em; font-size: 1em; }
-    #status { margin-top: 1em; font-weight: bold; }
+    #status { font-weight: bold; }
   </style>
 </head>
 <body>
+
+<div id="status">Processing Deriv login…</div>
+  
 <script>
-const params = new URLSearchParams(window.location.search);
-const state = params.get('state'); // e.g. "192.168.1.100%3A80"
+(function () {
+  const params = new URLSearchParams(window.location.search);
 
-if (state) {
-  const decoded = decodeURIComponent(state); // "192.168.1.100:80"
-  const [ip, port] = decoded.split(':');
+  const code  = params.get("code");
+  const fullState = params.get("state");
 
-  const query = window.location.search;
-  const protocol = port === 443 || port === '443' ? 'https' : 'http';
-  const redirectUrl = `${protocol}://${ip}:${port}/${query}`;
+  if (!code || !fullState) {
+    document.getElementById("status").textContent = "Missing OAuth parameters.";
+    return;
+  }
 
-  const statusDiv = document.createElement('div');
-  statusDiv.id = 'status';
-  statusDiv.textContent = "🔄 Redirecting to server…";
-  document.body.appendChild(statusDiv);
+  // Split state into: randomState || backendIP
+  const [randomState, backendIP] = fullState.split("||");
 
-  window.location.href = redirectUrl;
-}
+  if (!backendIP) {
+    document.getElementById("status").textContent = "Invalid state format.";
+    return;
+  }
+
+  // Validate PKCE state
+  const storedState = sessionStorage.getItem("oauth_state");
+  if (randomState !== storedState) {
+    document.getElementById("status").textContent = "State mismatch. Login aborted.";
+    return;
+  }
+
+  // Retrieve PKCE verifier
+  const codeVerifier = sessionStorage.getItem("pkce_code_verifier");
+  if (!codeVerifier) {
+    document.getElementById("status").textContent = "Missing PKCE verifier.";
+    return;
+  }
+
+  // Forward to backend for token exchange
+  const url = `http://${backendIP}:5000/api/oauth/token`;
+
+  fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      code: code,
+      code_verifier: codeVerifier
+    })
+  })
+  .then(res => res.json())
+  .then(data => {
+    if (data.ok) {
+      // Backend says token exchange succeeded
+      window.location.href = `https://${backendIP}/trader`;
+      return;
+    }
+
+    document.getElementById("status").textContent = "Token exchange failed.";
+  })
+  .catch(err => {
+    document.getElementById("status").textContent = "Network error.";
+  });
+
+})();
 </script>
 
 </body>
 </html>
-
