@@ -10,7 +10,7 @@
 <body>
 
 <div id="status">Processing Deriv login…</div>
-  
+
 <script>
 (function () {
   const params = new URLSearchParams(window.location.search);
@@ -23,7 +23,7 @@
     return;
   }
 
-  // Split state into: randomState || backendIP
+  // Extract randomState and backendIP
   const [randomState, backendIP] = fullState.split("||");
 
   if (!backendIP) {
@@ -31,50 +31,15 @@
     return;
   }
 
-  // Validate PKCE state
-  
-  const storedState = sessionStorage.getItem("oauth_state");
-  console.log("fullState:", fullState);
-console.log("randomState:", randomState);
-console.log("storedState:", storedState);
+  // ✔ NEW FLOW:
+  // Instead of validating state or PKCE verifier here,
+  // forward everything to backend /trader endpoint.
+  const redirectUrl =
+    `https://${backendIP}/trader/index.html`
+    + `?code=${encodeURIComponent(code)}`
+    + `&state=${encodeURIComponent(fullState)}`;
 
-  if (randomState !== storedState) {
-    document.getElementById("status").textContent = "State mismatch. Login aborted.";
-    return;
-  }
-
-  // Retrieve PKCE verifier
-  const codeVerifier = sessionStorage.getItem("pkce_code_verifier");
-  if (!codeVerifier) {
-    document.getElementById("status").textContent = "Missing PKCE verifier.";
-    return;
-  }
-
-  // Forward to backend for token exchange
-  const url = `http://${backendIP}:5000/api/oauth/token`;
-
-  fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      code: code,
-      code_verifier: codeVerifier
-    })
-  })
-  .then(res => res.json())
-  .then(data => {
-    if (data.ok) {
-      // Backend says token exchange succeeded
-      window.location.href = `https://${backendIP}/trader`;
-      return;
-    }
-
-    document.getElementById("status").textContent = "Token exchange failed.";
-  })
-  .catch(err => {
-    document.getElementById("status").textContent = "Network error.";
-  });
-
+  window.location.href = redirectUrl;
 })();
 </script>
 
