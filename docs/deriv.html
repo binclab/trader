@@ -32,6 +32,10 @@
   }
 
   // Validate PKCE state
+  console.log("fullState:", fullState);
+console.log("randomState:", randomState);
+console.log("storedState:", storedState);
+
   const storedState = sessionStorage.getItem("oauth_state");
   if (randomState !== storedState) {
     document.getElementById("status").textContent = "State mismatch. Login aborted.";
