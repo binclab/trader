@@ -37,7 +37,7 @@
   const redirectUrl =
     `https://${backendIP}/trader/index.html`
     + `?code=${encodeURIComponent(code)}`
-    + `&state=${encodeURIComponent(fullState)}`;
+    + `&state=${encodeURIComponent(randomState)}`;
 
   window.location.href = redirectUrl;
 })();
