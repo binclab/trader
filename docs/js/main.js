@@ -1,16 +1,47 @@
 // main.js
 const params = new URLSearchParams(window.location.search);
 
-if (params.get("client_id") && params.get("redirect_uri")) {
+if (params.get("client_id") && params.get("server")) {
     localStorage.setItem("client_id", params.get("client_id"));
-    localStorage.setItem("redirect_uri", params.get("redirect_uri"));
-    console.log("Client ID and Redirect URI stored. Starting OAuth flow...");
+    localStorage.setItem("server", params.get("server"));
+    console.log("Client ID and Server stored. Starting OAuth flow...");
     startOauth();
+}
+
+if (params.get("code") && params.get("scope") && params.get("state")) {
+    const codeVerifier = localStorage.getItem("pkce_code_verifier");
+    const oauthState = localStorage.getItem("oauth_state");
+    const server = localStorage.getItem("server");
+    if (!oauthState || state !== oauthState) {
+        document.body.innerHTML = "<h2>Invalid OAuth state.</h2>";
+        return true;
+    }
+    document.body.innerHTML = "<h2>Processing login…</h2>";
+
+    const ws = new WebSocket(`wss://${server}:5000/api/events`);
+
+    try {
+        const data = await exchangeCode(code, codeVerifier);
+
+        if (data.ok) {
+            localStorage.setItem("logged_in", "1");
+            // Clean URL (remove ?code=&state=)
+            window.history.replaceState({}, "", location.pathname);
+            showDashboard();
+            return true;
+        }
+
+        document.body.innerHTML = "<h2>Token exchange failed.</h2>";
+        return true;
+    } catch (e) {
+        console.error("Token exchange error:", e);
+        document.body.innerHTML = "<h2>Token exchange failed.</h2>";
+        return true;
+    }
 }
 
 async function startOauth() {
     const clientId = localStorage.getItem("client_id");
-    const redirectUri = localStorage.getItem("redirect_uri");
 
     // Generate random state
     const random = crypto.getRandomValues(new Uint8Array(16));
