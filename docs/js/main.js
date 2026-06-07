@@ -1,11 +1,9 @@
 // main.js
 const params = new URLSearchParams(window.location.search);
-const clientId = params.get("client_id");
-const redirectUri = params.get("redirect_uri");
 
-if (clientId && redirectUri) {
-    localStorage.setItem("client_id", clientId);
-    localStorage.setItem("redirect_uri", redirectUri);
+if (params.get("client_id") && params.get("redirect_uri")) {
+    localStorage.setItem("client_id", params.get("client_id"));
+    localStorage.setItem("redirect_uri", params.get("redirect_uri"));
     startOauth();
 }
 
