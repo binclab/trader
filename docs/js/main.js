@@ -17,27 +17,20 @@ if (params.get("code") && params.get("scope") && params.get("state")) {
         return true;
     }
     document.body.innerHTML = "<h2>Processing login…</h2>";
-
-    const ws = new WebSocket(`wss://${server}:5000/api/events`);
-
     try {
         const data = await exchangeCode(code, codeVerifier);
-
         if (data.ok) {
             localStorage.setItem("logged_in", "1");
-            // Clean URL (remove ?code=&state=)
             window.history.replaceState({}, "", location.pathname);
             showDashboard();
-            return true;
+        } else {
+            document.body.innerHTML = "<h2>Token exchange failed.</h2>";
         }
-
-        document.body.innerHTML = "<h2>Token exchange failed.</h2>";
-        return true;
     } catch (e) {
         console.error("Token exchange error:", e);
         document.body.innerHTML = "<h2>Token exchange failed.</h2>";
-        return true;
     }
+    return true;
 }
 
 async function startOauth() {
@@ -79,4 +72,44 @@ async function startOauth() {
 
     // Perform redirect
     window.location.href = "https://auth.deriv.com/oauth2/auth?" + authParams.toString();
+}
+
+async function exchangeCode(code, codeVerifier) {
+    const server = localStorage.getItem("server");
+    return new Promise((resolve, reject) => {
+        const wsAuth = new WebSocket(`wss://${server}:5000/api/oauth/exchange`);
+
+        wsAuth.onopen = () => {
+            // Send token exchange request
+            wsAuth.send(JSON.stringify({
+                action: "exchange_code",
+                code: code,
+                code_verifier: codeVerifier
+            }));
+        };
+
+        wsAuth.onmessage = (event) => {
+            try {
+                const data = JSON.parse(event.data);
+                if (data.type === "exchange_result") {
+                    wsAuth.close();
+                    resolve(data); // { ok: true, token: "...", ... }
+                }
+            } catch (err) {
+                wsAuth.close();
+                reject(err);
+            }
+        };
+
+        wsAuth.onerror = (err) => {
+            reject(err);
+        };
+
+        wsAuth.onclose = (evt) => {
+            // If closed before resolving, reject
+            if (evt.code !== 1000) {
+                reject(new Error("WebSocket closed unexpectedly"));
+            }
+        };
+    });
 }
