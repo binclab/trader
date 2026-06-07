@@ -4,6 +4,7 @@ const params = new URLSearchParams(window.location.search);
 if (params.get("client_id") && params.get("redirect_uri")) {
     localStorage.setItem("client_id", params.get("client_id"));
     localStorage.setItem("redirect_uri", params.get("redirect_uri"));
+    console.log("Client ID and Redirect URI stored. Starting OAuth flow...");
     startOauth();
 }
 
