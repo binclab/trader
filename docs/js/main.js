@@ -48,5 +48,5 @@ async function startOauth() {
         code_challenge_method: "S256"
     });
 
-    window.location = "https://auth.deriv.com/oauth2/auth?" + authParams.toString();
+    window.location.href = "https://auth.deriv.com/oauth2/auth?" + authParams.toString();
 }
