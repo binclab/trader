@@ -9,27 +9,32 @@ if (params.get("client_id") && params.get("server")) {
 }
 
 if (params.get("code") && params.get("scope") && params.get("state")) {
-    const codeVerifier = localStorage.getItem("pkce_code_verifier");
-    const oauthState = localStorage.getItem("oauth_state");
-    const server = localStorage.getItem("server");
-    if (!oauthState || state !== oauthState) {
-        document.body.innerHTML = "<h2>Invalid OAuth state.</h2>";
-        exit(1);
-    }
-    document.body.innerHTML = "<h2>Processing login…</h2>";
-    try {
-        const data = await exchangeCode(code, codeVerifier);
-        if (data.ok) {
-            localStorage.setItem("logged_in", "1");
-            window.history.replaceState({}, "", location.pathname);
-            showDashboard();
-        } else {
+    (async () => {
+        const code = params.get("code");
+        const state = params.get("state");
+        const codeVerifier = localStorage.getItem("pkce_code_verifier");
+        const oauthState = localStorage.getItem("oauth_state");
+
+        if (!oauthState || state !== oauthState) {
+            document.body.innerHTML = "<h2>Invalid OAuth state.</h2>";
+            return;
+        }
+
+        document.body.innerHTML = "<h2>Processing login…</h2>";
+        try {
+            const data = await exchangeCode(code, codeVerifier);
+            if (data.ok) {
+                localStorage.setItem("logged_in", "1");
+                window.history.replaceState({}, "", location.pathname);
+                showDashboard();
+            } else {
+                document.body.innerHTML = "<h2>Token exchange failed.</h2>";
+            }
+        } catch (e) {
+            console.error("Token exchange error:", e);
             document.body.innerHTML = "<h2>Token exchange failed.</h2>";
         }
-    } catch (e) {
-        console.error("Token exchange error:", e);
-        document.body.innerHTML = "<h2>Token exchange failed.</h2>";
-    }
+    })();
 }
 
 async function startOauth() {
