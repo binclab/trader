@@ -165,18 +165,32 @@ int main()
     g_mkdir_with_parents(dir, 0755);
     gchar* db_path = g_build_filename(dir, "profile.db", NULL);
     GError* error = NULL;
+
     int result = access("/var/www/server.pem", R_OK);
     char* cert_path = result == 0 ? "/var/www/server.pem" : "/etc/ssl/certs/server.pem";
     char* key_path = result == 0 ? "/var/www/server.key" : "/etc/ssl/private/server.key";
     GTlsCertificate* cert = g_tls_certificate_new_from_files(cert_path, key_path, &error);
+
     SoupServer* server = soup_server_new("tls-certificate", cert, NULL);
     soup_server_add_websocket_handler(server, "/api/events", NULL, NULL, ws_events_handler, NULL,
                                       NULL);
     soup_server_add_websocket_handler(server, "/api/oauth/exchange", NULL, NULL,
                                       ws_oauth_exchange_handler, NULL, NULL);
+
     if (!soup_server_listen_all(server, 5000, SOUP_SERVER_LISTEN_HTTPS, &error))
     {
         g_printerr("Failed to listen: %s\n", error ? error->message : "unknown");
+        return 1;
     }
+
+    g_print("Trader server running on https://0.0.0.0:5000\n");
+
+    // Keep the server alive
+    GMainLoop* loop = g_main_loop_new(NULL, FALSE);
+    g_main_loop_run(loop);
+
+    g_main_loop_unref(loop);
+    g_object_unref(server);
+    g_object_unref(cert);
     return 0;
 }
