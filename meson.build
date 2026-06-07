@@ -1,12 +1,8 @@
 project('Binc Trader', 'c', version: '0.0.1')
 
-webkitdep = dependency('webkitgtk-6.0')
-gldep = dependency('gl')
-glesdep = dependency('glesv2')
 sqlitedep = dependency('sqlite3')
 jsondep = dependency('json-glib-1.0')
 soupdep = dependency('libsoup-3.0')
-secretdep = dependency('libsecret-1')
 
 subdir('src')
 subdir('res')
@@ -16,9 +12,6 @@ executable(
     sources,
     resources,
     dependencies: [
-        webkitdep,
-        gldep,
-        glesdep,
         sqlitedep,
         jsondep,
         soupdep,
