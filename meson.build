@@ -26,5 +26,13 @@ executable(
     include_directories : 'include',
     c_args: ['-fstack-protector'],
     link_args: ['-lm'],
-    install: true,
+    install: false,
+    build_by_default : false,
+)
+
+executable(
+  'server',
+  'src/server.c',
+  dependencies : [libsoup_dep, json_dep, sqlite_dep],
+  install : true
 )
