@@ -24,16 +24,15 @@ async function startOauth() {
 
     // Derive code challenge
     const data = new TextEncoder().encode(codeVerifier);
-    const hash = await crypto.subtle.digest('SHA-256', data);
-    const bytes = new Uint8Array(hash);
-    let str = '';
-    for (const b of bytes) str += String.fromCharCode(b);
-    const codeChallenge = btoa(str)
+    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    const base64 = btoa(String.fromCharCode.apply(null, hashArray));
+    const codeChallenge = base64
         .replace(/\+/g, '-')
         .replace(/\//g, '_')
         .replace(/=+$/, '');
 
-    // Persist verifier and state for later token exchange
+    // Persist verifier and state
     localStorage.setItem("pkce_code_verifier", codeVerifier);
     localStorage.setItem("oauth_state", state);
 
@@ -41,12 +40,13 @@ async function startOauth() {
     const authParams = new URLSearchParams({
         response_type: "code",
         client_id: clientId,
-        redirect_uri: redirectUri, // use the exact redirect_uri
+        redirect_uri: redirectUri,
         scope: "trade account_manage",
         state: state,
         code_challenge: codeChallenge,
         code_challenge_method: "S256"
     });
 
+    // Perform redirect
     window.location.href = "https://auth.deriv.com/oauth2/auth?" + authParams.toString();
 }
