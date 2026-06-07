@@ -39,7 +39,7 @@ async function startOauth() {
     const authParams = new URLSearchParams({
         response_type: "code",
         client_id: clientId,
-        redirect_uri: redirectUri,
+        redirect_uri: "https://trader.binclab.com/index",
         scope: "trade account_manage",
         state: state,
         code_challenge: codeChallenge,
