@@ -14,7 +14,7 @@ if (params.get("code") && params.get("scope") && params.get("state")) {
     const server = localStorage.getItem("server");
     if (!oauthState || state !== oauthState) {
         document.body.innerHTML = "<h2>Invalid OAuth state.</h2>";
-        return;
+        exit(1);
     }
     document.body.innerHTML = "<h2>Processing login…</h2>";
     try {
@@ -30,7 +30,6 @@ if (params.get("code") && params.get("scope") && params.get("state")) {
         console.error("Token exchange error:", e);
         document.body.innerHTML = "<h2>Token exchange failed.</h2>";
     }
-    return true;
 }
 
 async function startOauth() {
