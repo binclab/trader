@@ -14,7 +14,7 @@ if (params.get("code") && params.get("scope") && params.get("state")) {
     const server = localStorage.getItem("server");
     if (!oauthState || state !== oauthState) {
         document.body.innerHTML = "<h2>Invalid OAuth state.</h2>";
-        return true;
+        return;
     }
     document.body.innerHTML = "<h2>Processing login…</h2>";
     try {
