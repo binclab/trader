@@ -46,6 +46,8 @@ async function startOauth() {
         code_challenge_method: "S256"
     });
 
+    console.log("Redirecting to OAuth URL:", "https://auth.deriv.com/oauth2/auth?" + authParams.toString());
+
     // Perform redirect
-    window.location.href = "https://auth.deriv.com/oauth2/auth?" + authParams.toString();
+    //window.location.href = "https://auth.deriv.com/oauth2/auth?" + authParams.toString();
 }
