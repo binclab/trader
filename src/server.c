@@ -4,8 +4,11 @@
 #include <string.h>
 #include <unistd.h>
 
+#include "libsoup/soup-server.h"
+
 static void on_events_message(SoupWebsocketConnection* connection, gint type, GBytes* message,
                               gpointer user_data);
+static void oauth_conn_closed(SoupWebsocketConnection* connection, gpointer user_data);
 
 static void ws_events_handler(SoupServer* server, SoupServerMessage* server_msg, const char* path,
                               SoupWebsocketConnection* connection, gpointer user_data)
@@ -74,13 +77,13 @@ static gchar* perform_token_exchange(const gchar* code, const gchar* code_verifi
     return response;
 }
 
-static void on_oauth_message(SoupWebsocketConnection* connection, gint type, GBytes* message,
-                             gpointer user_data)
+static void on_oauth_message(SoupWebsocketConnection* connection, SoupWebsocketDataType type,
+                             GBytes* message, gpointer user_data)
 {
     gsize len = 0;
     const guint8* data = g_bytes_get_data(message, &len);
     gchar* text = g_strndup((const char*)data, len);
-    g_print("Received OAuth message: %s\n", text);
+    g_printerr("Received OAuth message (type=%d): %s\n", type, text);
 
     if (type != SOUP_WEBSOCKET_DATA_TEXT)
     {
@@ -161,7 +164,23 @@ static void ws_oauth_exchange_handler(SoupServer* server, SoupServerMessage* ser
                                       const char* path, SoupWebsocketConnection* connection,
                                       gpointer user_data)
 {
+    g_printerr("OAuth websocket handler: new connection on path %s\n", path);
+    gint state = soup_websocket_connection_get_state(connection);
+    g_printerr("  connection state=%d\n", state);
     g_signal_connect(connection, "message", G_CALLBACK(on_oauth_message), NULL);
+    g_signal_connect(connection, "closed", G_CALLBACK(oauth_conn_closed), NULL);
+    /* Send a welcome ping so client can see server-side reachability */
+    soup_websocket_connection_send_text(connection, "{\"type\":\"welcome\"}");
+    g_printerr("Sent welcome message to client\n");
+}
+
+static void oauth_conn_closed(SoupWebsocketConnection* connection, gpointer user_data)
+{
+    (void)connection;
+    (void)user_data;
+    gint state = soup_websocket_connection_get_state(connection);
+    gint code = soup_websocket_connection_get_close_code(connection);
+    g_printerr("OAuth websocket connection closed: state=%d code=%d\n", state, code);
 }
 
 int main()
@@ -182,7 +201,11 @@ int main()
     soup_server_add_websocket_handler(server, "/api/oauth/exchange", NULL, NULL,
                                       ws_oauth_exchange_handler, NULL, NULL);
 
-    if (!soup_server_listen_all(server, 5000, SOUP_SERVER_LISTEN_HTTPS, &error))
+    if (!soup_server_listen_all(server, 5000, SOUP_SERVER_LISTEN_IPV4_ONLY, &error))
+    {
+        g_printerr("Failed to listen (plain WS): %s\n", error ? error->message : "unknown");
+    }
+    if (!soup_server_listen_all(server, 5001, SOUP_SERVER_LISTEN_HTTPS, &error))
     {
         g_printerr("Failed to listen: %s\n", error ? error->message : "unknown");
         return 1;
