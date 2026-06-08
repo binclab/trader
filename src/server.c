@@ -77,13 +77,16 @@ static gchar* perform_token_exchange(const gchar* code, const gchar* code_verifi
 static void on_oauth_message(SoupWebsocketConnection* connection, gint type, GBytes* message,
                              gpointer user_data)
 {
-    if (type != SOUP_WEBSOCKET_DATA_TEXT) return;
-
     gsize len = 0;
     const guint8* data = g_bytes_get_data(message, &len);
     gchar* text = g_strndup((const char*)data, len);
-
     g_print("Received OAuth message: %s\n", text);
+
+    if (type != SOUP_WEBSOCKET_DATA_TEXT)
+    {
+        g_free(text);
+        return;
+    }
 
     JsonParser* parser = json_parser_new();
     GError* err = NULL;
