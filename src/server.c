@@ -83,6 +83,8 @@ static void on_oauth_message(SoupWebsocketConnection* connection, gint type, GBy
     const guint8* data = g_bytes_get_data(message, &len);
     gchar* text = g_strndup((const char*)data, len);
 
+    g_print("Received OAuth message: %s\n", text);
+
     JsonParser* parser = json_parser_new();
     GError* err = NULL;
     if (!json_parser_load_from_data(parser, text, -1, &err))
