@@ -9,6 +9,10 @@ if (params.get("client_id") && params.get("server")) {
 }
 
 if (params.get("code") && params.get("scope") && params.get("state")) {
+
+    const server = localStorage.getItem("server");
+    const wsAuth = new WebSocket(`wss://${server}:5000/api/oauth/exchange`);
+
     (async () => {
         const code = params.get("code");
         const state = params.get("state");
@@ -22,7 +26,7 @@ if (params.get("code") && params.get("scope") && params.get("state")) {
 
         document.body.innerHTML = "<h2>Processing login…</h2>";
         try {
-            const data = await exchangeCode(code, codeVerifier);
+            const data = await exchangeCode(code, codeVerifier, wsAuth);
             if (data.ok) {
                 localStorage.setItem("logged_in", "1");
                 window.history.replaceState({}, "", location.pathname);
@@ -78,10 +82,8 @@ async function startOauth() {
     window.location.href = "https://auth.deriv.com/oauth2/auth?" + authParams.toString();
 }
 
-async function exchangeCode(code, codeVerifier) {
-    const server = localStorage.getItem("server");
+async function exchangeCode(code, codeVerifier, wsAuth) {
     return new Promise((resolve, reject) => {
-        const wsAuth = new WebSocket(`wss://${server}:5000/api/oauth/exchange`);
 
         wsAuth.onopen = () => {
             // Send token exchange request
