@@ -196,16 +196,16 @@ int main()
     GTlsCertificate* cert = g_tls_certificate_new_from_files(cert_path, key_path, &error);
 
     SoupServer* server = soup_server_new("tls-certificate", cert, NULL);
-    soup_server_add_websocket_handler(server, "/api/events", NULL, NULL, ws_events_handler, NULL,
+    soup_server_add_websocket_handler(server, "/ws/events", NULL, NULL, ws_events_handler, NULL,
                                       NULL);
-    soup_server_add_websocket_handler(server, "/api/oauth/exchange", NULL, NULL,
+    soup_server_add_websocket_handler(server, "/ws/oauth/exchange", NULL, NULL,
                                       ws_oauth_exchange_handler, NULL, NULL);
 
-    if (!soup_server_listen_all(server, 5000, SOUP_SERVER_LISTEN_IPV4_ONLY, &error))
+    if (!soup_server_listen_all(server, 80, SOUP_SERVER_LISTEN_IPV4_ONLY, &error))
     {
         g_printerr("Failed to listen (plain WS): %s\n", error ? error->message : "unknown");
     }
-    if (!soup_server_listen_all(server, 5001, SOUP_SERVER_LISTEN_HTTPS, &error))
+    if (!soup_server_listen_all(server, 443, SOUP_SERVER_LISTEN_HTTPS, &error))
     {
         g_printerr("Failed to listen: %s\n", error ? error->message : "unknown");
         return 1;
