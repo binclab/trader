@@ -11,7 +11,7 @@ if (params.get("client_id") && params.get("server")) {
 if (params.get("code") && params.get("scope") && params.get("state")) {
 
     const server = localStorage.getItem("server");
-    const wsAuth = new WebSocket(`wss://${server}:5000/api/oauth/exchange`);
+    const wsAuth = new WebSocket(`ws://${server}:5000/api/oauth/exchange`);
 
     (async () => {
         const code = params.get("code");
