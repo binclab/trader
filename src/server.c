@@ -205,7 +205,7 @@ int main()
     {
         g_printerr("Failed to listen (plain WS): %s\n", error ? error->message : "unknown");
     }
-    if (!soup_server_listen_all(server, 5000, SOUP_SERVER_LISTEN_HTTPS, &error))
+    if (!soup_server_listen_all(server, 5001, SOUP_SERVER_LISTEN_HTTPS, &error))
     {
         g_printerr("Failed to listen: %s\n", error ? error->message : "unknown");
         return 1;
