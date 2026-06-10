@@ -190,8 +190,8 @@ int main()
     gchar* db_path = g_build_filename(dir, "profile.db", NULL);
     GError* error = NULL;
 
-    int result = access("/var/www/server.pem", R_OK);
-    char* cert_path = result == 0 ? "/var/www/server.pem" : "/etc/ssl/certs/server.pem";
+    int result = access("/var/www/server.crt", R_OK);
+    char* cert_path = result == 0 ? "/var/www/server.crt" : "/etc/ssl/certs/server.crt";
     char* key_path = result == 0 ? "/var/www/server.key" : "/etc/ssl/private/server.key";
     GTlsCertificate* cert = g_tls_certificate_new_from_files(cert_path, key_path, &error);
 

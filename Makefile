@@ -1,13 +1,17 @@
-all: cert compile
+all: compile
 
 IP := $(shell ip -4 addr show wlan0 | awk '/inet / {print $$2}' | cut -d/ -f1)
 
 cert:
-	echo "subjectAltName=IP:$(IP)" > /var/www/ext.cnf
-	[ -f /var/www/server.key ] || openssl genrsa -out /var/www/server.key 2048
-	openssl req -new -key /var/www/server.key -out /var/www/server.csr -subj "/CN=$(IP)"
-	openssl x509 -req -days 365 -in /var/www/server.csr -signkey /var/www/server.key \
-	   -out /var/www/server.pem -extfile /var/www/ext.cnf
+	openssl req -x509 -new -nodes -keyout rootCA.key -sha256 -days 365 \
+	  -out rootCA.crt -subj "/CN=Local Root CA"
+	certutil -d sql:$HOME/.pki/nssdb -A -t "CT,C,C" -n "LocalRootCA" -i rootCA.crt
+	openssl req -new -nodes -out server.csr -keyout server.key \
+	  -subj "/CN=tazi.local"
+	openssl x509 -req -in server.csr -CA rootCA.crt -CAkey rootCA.key \
+	  -CAcreateserial -out server.crt -days 365 \
+	  -extfile <(printf "subjectAltName=DNS:tazi.local")
+
 
 configure:
 	meson setup .build
