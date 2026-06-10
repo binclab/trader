@@ -196,9 +196,8 @@ int main()
     GTlsCertificate* cert = g_tls_certificate_new_from_files(cert_path, key_path, &error);
 
     SoupServer* server = soup_server_new("tls-certificate", cert, NULL);
-    soup_server_add_websocket_handler(server, "/ws/events", NULL, NULL, ws_events_handler, NULL,
-                                      NULL);
-    soup_server_add_websocket_handler(server, "/ws/oauth/exchange", NULL, NULL,
+    soup_server_add_websocket_handler(server, "/events", NULL, NULL, ws_events_handler, NULL, NULL);
+    soup_server_add_websocket_handler(server, "/oauth/exchange", NULL, NULL,
                                       ws_oauth_exchange_handler, NULL, NULL);
 
     if (!soup_server_listen_all(server, 5000, SOUP_SERVER_LISTEN_IPV4_ONLY, &error))
