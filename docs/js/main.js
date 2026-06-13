@@ -1,4 +1,4 @@
-import { showDashboard } from "./dashboard.js";
+import { showDashboard } from "./dashboard";
 
 if (localStorage.getItem("logged_in") === "1") {
     showDashboard();
@@ -33,7 +33,6 @@ if (params.get("client_id") && params.get("server")) {
             const data = await exchangeCode(code, codeVerifier, wsAuth);
             if (data.ok) {
                 localStorage.setItem("logged_in", "1");
-                window.history.replaceState({}, "", location.pathname);
                 showDashboard();
             } else {
                 document.body.innerHTML = "<h2>Token exchange failed.</h2>";
@@ -137,4 +136,10 @@ async function exchangeCode(code, codeVerifier, wsAuth) {
             }
         };
     });
+}
+
+function showDashboard() {
+    //window.history.replaceState({}, "", location.pathname);
+    const server = localStorage.getItem("server");
+    window.location.href = `https://${server}/trader`;
 }
