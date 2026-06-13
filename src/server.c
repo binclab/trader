@@ -6,13 +6,16 @@
 #include <unistd.h>
 #include <errno.h>
 
-#include "glib.h"
-
 static void on_events_message(SoupWebsocketConnection* connection, SoupWebsocketDataType type,
                               GBytes* message, gpointer user_data);
 static void on_oauth_message(SoupWebsocketConnection* connection, SoupWebsocketDataType type,
                              GBytes* message, gpointer user_data);
-static void oauth_conn_closed(SoupWebsocketConnection* connection, gpointer user_data);
+
+// Shared state structure to avoid redundant database opening and session reallocation
+typedef struct {
+    sqlite3* db;
+    SoupSession* session;
+} AppContext;
 
 static void ws_events_handler(SoupServer* server, SoupServerMessage* msg, const char* path,
                               SoupWebsocketConnection* connection, gpointer user_data)
@@ -24,87 +27,81 @@ static void on_events_message(SoupWebsocketConnection* connection, SoupWebsocket
                               GBytes* message, gpointer user_data)
 {
     if (type != SOUP_WEBSOCKET_DATA_TEXT) return;
+
+    // Zero-allocation bounceback utilizing the underlying buffer data safely
     gsize len = 0;
-    const guint8* data = g_bytes_get_data(message, &len);
-    gchar* text = g_strndup((const char*)data, len);
-    soup_websocket_connection_send_text(connection, text);
-    g_free(text);
+    const char* data = (const char*)g_bytes_get_data(message, &len);
+    soup_websocket_connection_send_text(connection, data);
 }
 
-static JsonObject* perform_token_exchange(const gchar* code, const gchar* code_verifier,
+static JsonObject* perform_token_exchange(SoupSession* session, const gchar* code, const gchar* code_verifier,
                                           const gchar* client_id, GError** error)
 {
-    g_printerr("perform_token_exchange: code=%s verifier=%s\n", code, code_verifier);
-    SoupSession* session = soup_session_new();
     SoupMessage* msg = soup_message_new("POST", "https://auth.deriv.com/oauth2/token");
-
     const char* redirect = "https://trader.binclab.com/index";
     gchar* body;
-    if (client_id && *client_id)
+
+    if (client_id && *client_id) {
         body = g_strdup_printf(
             "grant_type=authorization_code&client_id=%s&code_verifier=%s&code=%s&redirect_uri=%s",
             client_id, code_verifier, code, redirect);
-    else
+    } else {
         body = g_strdup_printf(
-            "grant_type=authorization_code&code_verifier=%s&code=%s&redirect_uri=%s", code_verifier,
-            code, redirect);
+            "grant_type=authorization_code&code_verifier=%s&code=%s&redirect_uri=%s", 
+            code_verifier, code, redirect);
+    }
 
-    GBytes* bytes = g_bytes_new(body, strlen(body));
+    GBytes* bytes = g_bytes_new_take(body, strlen(body)); // Takes ownership of body, eliminating 1 allocation copy
     soup_message_set_request_body_from_bytes(msg, "application/x-www-form-urlencoded", bytes);
     g_bytes_unref(bytes);
-    g_free(body);
 
     GError* err = NULL;
     GBytes* resp = soup_session_send_and_read(session, msg, NULL, &err);
-
-    gchar* response = NULL;
     guint status = soup_message_get_status(msg);
-    if (resp != NULL)
-    {
-        gsize rlen = 0;
-        const guint8* rdata = g_bytes_get_data(resp, &rlen);
-        response = g_strndup((const char*)rdata, rlen);
-        g_printerr("perform_token_exchange: status=%u response=%s\n", status, response);
-        g_bytes_unref(resp);
-    }
-    else
-    {
+
+    if (resp == NULL) {
         if (err)
             g_propagate_error(error, err);
         else
             g_set_error(error, g_quark_from_string("oauth"), status,
                         "Token endpoint returned status %u", status);
+        g_object_unref(msg);
+        return NULL;
     }
 
+    gsize rlen = 0;
+    const char* rdata = (const char*)g_bytes_get_data(resp, &rlen);
+
     JsonParser* parser = json_parser_new();
-    if (!json_parser_load_from_data(parser, response, -1, error))
-    {
+    // Load parsed stream directly without performing a g_strndup clone string step first
+    if (!json_parser_load_from_data(parser, rdata, rlen, error)) {
         g_object_unref(parser);
+        g_bytes_unref(resp);
         g_object_unref(msg);
-        g_object_unref(session);
-        g_free(response);
         return NULL;
     }
 
     JsonNode* root = json_parser_get_root(parser);
     if (!JSON_NODE_HOLDS_OBJECT(root)) {
         g_printerr("Token exchange response root is not an object!\n");
+        g_set_error(error, g_quark_from_string("oauth"), 0, "Response root not an object");
         g_object_unref(parser);
+        g_bytes_unref(resp);
         g_object_unref(msg);
-        g_object_unref(session);
-        g_free(response);
         return NULL;
     }
 
-    JsonObject* obj = json_node_get_object(root);
-    g_free(response);
+    // Reference the internal object tree before unreferencing the parser
+    JsonObject* obj = json_object_ref(json_node_get_object(root));
+
     g_object_unref(parser);
+    g_bytes_unref(resp);
     g_object_unref(msg);
-    g_object_unref(session);
-    return obj;
+    
+    return obj; // Caller takes ownership via JSON reference
 }
 
-static void save_token(JsonObject* obj, const gchar* db_path)
+static void save_token(sqlite3* db, JsonObject* obj)
 {
     if (!json_object_has_member(obj, "access_token")) {
         g_printerr("No access_token in JSON, not saving.\n");
@@ -116,96 +113,77 @@ static void save_token(JsonObject* obj, const gchar* db_path)
     const gchar* scope = json_object_get_string_member(obj, "scope");
     const gchar* token_type = json_object_get_string_member(obj, "token_type");
 
-    sqlite3* db = NULL;
-    if (sqlite3_open(db_path, &db) != SQLITE_OK)
-    {
-        g_printerr("Failed to open database: %s\n", sqlite3_errmsg(db));
-        sqlite3_close(db);
-        return;
-    }
-
     const char* sql =
         "INSERT OR REPLACE INTO token "
         "(id, access_token, expires_in, scope, token_type, created_at) "
         "VALUES (1, ?, ?, ?, ?, strftime('%s','now'));";
 
     sqlite3_stmt* stmt = NULL;
-    if (sqlite3_prepare_v2(db, sql, -1, &stmt, NULL) != SQLITE_OK)
-    {
+    if (sqlite3_prepare_v2(db, sql, -1, &stmt, NULL) != SQLITE_OK) {
         g_printerr("Failed to prepare statement: %s\n", sqlite3_errmsg(db));
-        sqlite3_close(db);
         return;
     }
 
-    sqlite3_bind_text(stmt, 1, access_token, -1, SQLITE_TRANSIENT);
+    // SQLITE_STATIC avoids unnecessary internal memory copying of the fields inside SQLite
+    sqlite3_bind_text(stmt, 1, access_token, -1, SQLITE_STATIC);
     sqlite3_bind_int(stmt, 2, expires_in);
-    sqlite3_bind_text(stmt, 3, scope ? scope : "", -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt, 4, token_type ? token_type : "", -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 3, scope ? scope : "", -1, SQLITE_STATIC);
+    sqlite3_bind_text(stmt, 4, token_type ? token_type : "", -1, SQLITE_STATIC);
 
-    if (sqlite3_step(stmt) != SQLITE_DONE)
-    {
+    if (sqlite3_step(stmt) != SQLITE_DONE) {
         g_printerr("Failed to insert token: %s\n", sqlite3_errmsg(db));
     }
 
     sqlite3_finalize(stmt);
-    sqlite3_close(db);
 }
 
 static void on_oauth_message(SoupWebsocketConnection* connection, SoupWebsocketDataType type,
                              GBytes* message, gpointer user_data)
 {
-    const gchar* db_path = (const gchar*)user_data;
+    AppContext* ctx = (AppContext*)user_data;
     if (type != SOUP_WEBSOCKET_DATA_TEXT) return;
+
     gsize len = 0;
-    const guint8* data = g_bytes_get_data(message, &len);
-    gchar* text = g_strndup((const char*)data, len);
+    const char* data = (const char*)g_bytes_get_data(message, &len);
 
     JsonParser* parser = json_parser_new();
     GError* err = NULL;
-    if (!json_parser_load_from_data(parser, text, -1, &err))
-    {
-        gchar* reply =
-            g_strdup_printf("{\"type\":\"exchange_result\",\"ok\":false,\"error\":\"%s\"}",
-                            err ? err->message : "parse error");
+    if (!json_parser_load_from_data(parser, data, len, &err)) {
+        gchar* reply = g_strdup_printf("{\"type\":\"exchange_result\",\"ok\":false,\"error\":\"%s\"}",
+                                        err ? err->message : "parse error");
         soup_websocket_connection_send_text(connection, reply);
         g_free(reply);
         g_clear_error(&err);
         g_object_unref(parser);
-        g_free(text);
         return;
     }
 
     JsonObject* obj = json_node_get_object(json_parser_get_root(parser));
     const gchar* action = json_object_get_string_member(obj, "action");
-    if (g_strcmp0(action, "exchange_code") == 0)
-    {
+    if (g_strcmp0(action, "exchange_code") == 0) {
         const gchar* code = json_object_get_string_member(obj, "code");
         const gchar* verifier = json_object_get_string_member(obj, "code_verifier");
         const gchar* client_id = json_object_get_string_member(obj, "client_id");
 
         GError* xerr = NULL;
-        JsonObject* resp_obj = perform_token_exchange(code, verifier, client_id, &xerr);
-        if (resp_obj)
-        {
-            save_token(resp_obj, db_path);
+        JsonObject* resp_obj = perform_token_exchange(ctx->session, code, verifier, client_id, &xerr);
+        if (resp_obj) {
+            save_token(ctx->db, resp_obj);
 
             JsonNode* node = json_node_new(JSON_NODE_OBJECT);
             json_node_set_object(node, resp_obj);
 
             gchar* json_str = json_to_string(node, FALSE);
-            gchar* reply =
-                g_strdup_printf("{\"type\":\"exchange_result\",\"ok\":true,\"data\":%s}", json_str);
+            gchar* reply = g_strdup_printf("{\"type\":\"exchange_result\",\"ok\":true,\"data\":%s}", json_str);
             g_free(json_str);
             soup_websocket_connection_send_text(connection, reply);
             g_free(reply);
 
             json_node_free(node);
-        }
-        else
-        {
+            json_object_unref(resp_obj);
+        } else {
             const gchar* msg = xerr ? xerr->message : "Token exchange failed";
-            gchar* reply = g_strdup_printf(
-                "{\"type\":\"exchange_result\",\"ok\":false,\"error\":\"%s\"}", msg);
+            gchar* reply = g_strdup_printf("{\"type\":\"exchange_result\",\"ok\":false,\"error\":\"%s\"}", msg);
             soup_websocket_connection_send_text(connection, reply);
             g_free(reply);
             g_clear_error(&xerr);
@@ -213,38 +191,22 @@ static void on_oauth_message(SoupWebsocketConnection* connection, SoupWebsocketD
     }
 
     g_object_unref(parser);
-    g_free(text);
 }
 
 static void ws_oauth_exchange_handler(SoupServer* server, SoupServerMessage* msg, const char* path,
                                       SoupWebsocketConnection* connection, gpointer user_data)
 {
-    g_printerr("OAuth websocket handler: new connection on %s\n", path);
-
-    g_signal_connect(connection, "message", G_CALLBACK(on_oauth_message), (gpointer)user_data);
-    g_signal_connect(connection, "closed", G_CALLBACK(oauth_conn_closed), NULL);
-
+    g_signal_connect(connection, "message", G_CALLBACK(on_oauth_message), user_data);
     soup_websocket_connection_send_text(connection, "{\"type\":\"welcome\"}");
-
-    g_object_ref(connection);
 }
 
-static void oauth_conn_closed(SoupWebsocketConnection* connection, gpointer user_data)
-{
-    gint code = soup_websocket_connection_get_close_code(connection);
-    g_printerr("OAuth websocket closed, code=%d\n", code);
-    if (code != SOUP_WEBSOCKET_CLOSE_NORMAL)
-        g_object_unref(connection);
-}
-
-static void ensure_database(const gchar* db_path)
+static sqlite3* ensure_and_get_database(const gchar* db_path)
 {
     sqlite3* db = NULL;
-    if (sqlite3_open(db_path, &db) != SQLITE_OK)
-    {
+    if (sqlite3_open(db_path, &db) != SQLITE_OK) {
         g_printerr("Failed to open database: %s\n", sqlite3_errmsg(db));
-        sqlite3_close(db);
-        return;
+        if (db) sqlite3_close(db);
+        return NULL;
     }
 
     const char* sql =
@@ -258,13 +220,12 @@ static void ensure_database(const gchar* db_path)
         ");";
 
     char* err = NULL;
-    if (sqlite3_exec(db, sql, NULL, NULL, &err) != SQLITE_OK)
-    {
+    if (sqlite3_exec(db, sql, NULL, NULL, &err) != SQLITE_OK) {
         g_printerr("Failed to create table: %s\n", err);
         sqlite3_free(err);
     }
 
-    sqlite3_close(db);
+    return db;
 }
 
 int main()
@@ -272,23 +233,37 @@ int main()
     gchar* app_dir = g_build_filename(g_get_user_data_dir(), "trader", NULL);
     gchar* db_path = g_build_filename(app_dir, "profile.db", NULL);
 
-    if (g_mkdir_with_parents(app_dir, 0755) == -1)
-    {
+    if (g_mkdir_with_parents(app_dir, 0755) == -1) {
         g_printerr("Failed to create data directory: %s\n", strerror(errno));
+        g_free(app_dir);
+        g_free(db_path);
         return 1;
     }
 
-    ensure_database(db_path);
+    AppContext ctx;
+    ctx.db = ensure_and_get_database(db_path);
+    if (!ctx.db) {
+        g_free(app_dir);
+        g_free(db_path);
+        return 1;
+    }
+    
+    ctx.session = soup_session_new();
 
     SoupServer* server = soup_server_new(NULL, NULL);
     soup_server_add_websocket_handler(server, "/events", NULL, NULL, ws_events_handler, NULL, NULL);
     soup_server_add_websocket_handler(server, "/trader/oauth", NULL, NULL,
-                                      ws_oauth_exchange_handler, (gpointer)db_path, NULL);
+                                      ws_oauth_exchange_handler, &ctx, NULL);
 
     GError* error = NULL;
-    if (!soup_server_listen_all(server, 5000, SOUP_SERVER_LISTEN_IPV4_ONLY, &error))
-    {
+    if (!soup_server_listen_all(server, 5000, SOUP_SERVER_LISTEN_IPV4_ONLY, &error)) {
         g_printerr("Failed to listen: %s\n", error->message);
+        g_clear_error(&error);
+        sqlite3_close(ctx.db);
+        g_object_unref(ctx.session);
+        g_object_unref(server);
+        g_free(app_dir);
+        g_free(db_path);
         return 1;
     }
 
@@ -297,9 +272,13 @@ int main()
     GMainLoop* loop = g_main_loop_new(NULL, FALSE);
     g_main_loop_run(loop);
 
+    // Clean up
     g_main_loop_unref(loop);
     g_object_unref(server);
+    g_object_unref(ctx.session);
+    sqlite3_close(ctx.db);
     g_free(app_dir);
     g_free(db_path);
+    
     return 0;
 }
