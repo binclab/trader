@@ -1,5 +1,9 @@
 import { showDashboard } from "./dashboard.js";
 
+if (localStorage.getItem("logged_in") === "1") {
+    showDashboard();
+}
+
 const params = new URLSearchParams(window.location.search);
 
 if (params.get("client_id") && params.get("server")) {
@@ -39,8 +43,6 @@ if (params.get("client_id") && params.get("server")) {
             document.body.innerHTML = "<h2>Token exchange failed.</h2>";
         }
     })();
-} else if (localStorage.getItem("logged_in") === "1") {
-    showDashboard();
 }
 
 async function startOauth() {
