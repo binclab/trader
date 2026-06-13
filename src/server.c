@@ -73,8 +73,9 @@ static gchar* perform_token_exchange(const gchar* code, const gchar* code_verifi
 static void on_oauth_message(SoupWebsocketConnection* connection, SoupWebsocketDataType type,
                              GBytes* message, gpointer user_data)
 {
-    g_printerr("on_oauth_message fired, type=%d\n", type);
     if (type != SOUP_WEBSOCKET_DATA_TEXT) return;
+    g_printerr("on_oauth_message fired, type=%d\n", type);
+
     gsize len = 0;
     const guint8* data = g_bytes_get_data(message, &len);
     gchar* text = g_strndup((const char*)data, len);
@@ -149,9 +150,7 @@ static void ws_oauth_exchange_handler(SoupServer* server, SoupServerMessage* msg
     // Send initial welcome
     soup_websocket_connection_send_text(connection, "{\"type\":\"welcome\"}");
 
-    // Schedule periodic ping every 30 seconds
     g_object_ref(connection);
-    // g_timeout_add_seconds(30, send_ping, connection);
 }
 
 static void oauth_conn_closed(SoupWebsocketConnection* connection, gpointer user_data)
