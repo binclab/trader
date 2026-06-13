@@ -104,13 +104,39 @@ static JsonNode* perform_token_exchange(const gchar* code, const gchar* code_ver
 
 static void save_token(JsonNode* token_response)
 {
-    sqlite3* database;
-    int rc = sqlite3_open("profile.db", &database);
-    if (rc != SQLITE_OK)
+    sqlite3* db = NULL;
+    if (sqlite3_open(db_path, &db) != SQLITE_OK)
     {
-        g_printerr("Failed to open database: %s\n", sqlite3_errmsg(database));
+        g_printerr("Failed to open database: %s\n", sqlite3_errmsg(db));
+        sqlite3_close(db);
         return;
     }
+
+    const char* sql =
+        "INSERT OR REPLACE INTO token "
+        "(id, access_token, expires_in, scope, token_type, created_at) "
+        "VALUES (1, ?, ?, ?, ?, strftime('%s','now'));";
+
+    sqlite3_stmt* stmt = NULL;
+    if (sqlite3_prepare_v2(db, sql, -1, &stmt, NULL) != SQLITE_OK)
+    {
+        g_printerr("Failed to prepare statement: %s\n", sqlite3_errmsg(db));
+        sqlite3_close(db);
+        return;
+    }
+
+    sqlite3_bind_text(stmt, 1, access_token, -1, SQLITE_STATIC);
+    sqlite3_bind_int(stmt, 2, expires_in);
+    sqlite3_bind_text(stmt, 3, scope, -1, SQLITE_STATIC);
+    sqlite3_bind_text(stmt, 4, token_type, -1, SQLITE_STATIC);
+
+    if (sqlite3_step(stmt) != SQLITE_DONE)
+    {
+        g_printerr("Failed to insert token: %s\n", sqlite3_errmsg(db));
+    }
+
+    sqlite3_finalize(stmt);
+    sqlite3_close(db);
 }
 
 static void on_oauth_message(SoupWebsocketConnection* connection, SoupWebsocketDataType type,
@@ -153,6 +179,7 @@ static void on_oauth_message(SoupWebsocketConnection* connection, SoupWebsocketD
         if (resp)
         {
             save_token(resp);
+
             gchar* reply =
                 g_strdup_printf("{\"type\":\"exchange_result\",\"ok\":true,\"data\":%s}", resp);
             g_printerr("on_oauth_message: sending success reply: %s\n", reply);
@@ -197,9 +224,6 @@ static void oauth_conn_closed(SoupWebsocketConnection* connection, gpointer user
     if (code != SOUP_WEBSOCKET_CLOSE_NORMAL) g_object_unref(connection);
 }
 
-#include <glib.h>
-#include <sqlite3.h>
-
 static void ensure_database(const gchar* db_path)
 {
     sqlite3* db = NULL;
@@ -228,59 +252,6 @@ static void ensure_database(const gchar* db_path)
     }
 
     sqlite3_close(db);
-}
-
-static void save_token(const gchar* db_path, const gchar* access_token, gint expires_in,
-                       const gchar* scope, const gchar* token_type)
-{
-    sqlite3* db = NULL;
-    if (sqlite3_open(db_path, &db) != SQLITE_OK)
-    {
-        g_printerr("Failed to open database: %s\n", sqlite3_errmsg(db));
-        sqlite3_close(db);
-        return;
-    }
-
-    const char* sql =
-        "INSERT OR REPLACE INTO token "
-        "(id, access_token, expires_in, scope, token_type, created_at) "
-        "VALUES (1, ?, ?, ?, ?, strftime('%s','now'));";
-
-    sqlite3_stmt* stmt = NULL;
-    if (sqlite3_prepare_v2(db, sql, -1, &stmt, NULL) != SQLITE_OK)
-    {
-        g_printerr("Failed to prepare statement: %s\n", sqlite3_errmsg(db));
-        sqlite3_close(db);
-        return;
-    }
-
-    sqlite3_bind_text(stmt, 1, access_token, -1, SQLITE_STATIC);
-    sqlite3_bind_int(stmt, 2, expires_in);
-    sqlite3_bind_text(stmt, 3, scope, -1, SQLITE_STATIC);
-    sqlite3_bind_text(stmt, 4, token_type, -1, SQLITE_STATIC);
-
-    if (sqlite3_step(stmt) != SQLITE_DONE)
-    {
-        g_printerr("Failed to insert token: %s\n", sqlite3_errmsg(db));
-    }
-
-    sqlite3_finalize(stmt);
-    sqlite3_close(db);
-}
-
-int main(void)
-{
-    const gchar* db_path = "/etc/trader/database.db";
-    ensure_database(db_path);
-
-    // Example JSON values
-    save_token(db_path,
-               ".....",                 // access_token
-               2591999,                 // expires_in
-               "trade account_manage",  // scope
-               "bearer");               // token_type
-
-    return 0;
 }
 
 int main()
