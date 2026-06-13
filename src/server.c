@@ -150,13 +150,15 @@ static void ws_oauth_exchange_handler(SoupServer* server, SoupServerMessage* msg
     soup_websocket_connection_send_text(connection, "{\"type\":\"welcome\"}");
 
     // Schedule periodic ping every 30 seconds
-    // g_timeout_add_seconds(30, send_ping, connection);
+    g_object_ref(connection);
+    g_timeout_add_seconds(30, send_ping, connection);
 }
 
 static void oauth_conn_closed(SoupWebsocketConnection* connection, gpointer user_data)
 {
     gint code = soup_websocket_connection_get_close_code(connection);
     g_printerr("OAuth websocket closed, code=%d\n", code);
+    g_object_unref(connection);
 }
 
 int main()
