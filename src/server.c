@@ -4,6 +4,7 @@
 #include <sqlite3.h>
 #include <string.h>
 #include <unistd.h>
+#include <errno.h>
 
 #include "glib.h"
 
@@ -34,7 +35,6 @@ static JsonNode* perform_token_exchange(const gchar* code, const gchar* code_ver
                                         const gchar* client_id, GError** error)
 {
     g_printerr("perform_token_exchange: code=%s verifier=%s\n", code, code_verifier);
-    // Instead of calling the real endpoint, just return dummy JSON
     SoupSession* session = soup_session_new();
     SoupMessage* msg = soup_message_new("POST", "https://auth.deriv.com/oauth2/token");
 
@@ -70,15 +70,6 @@ static JsonNode* perform_token_exchange(const gchar* code, const gchar* code_ver
     }
     else
     {
-        if (resp != NULL)
-        {
-            gsize rlen = 0;
-            const guint8* rdata = g_bytes_get_data(resp, &rlen);
-            gchar* errbody = g_strndup((const char*)rdata, rlen);
-            g_printerr("perform_token_exchange: non-200 status=%u response=%s\n", status, errbody);
-            g_free(errbody);
-            g_bytes_unref(resp);
-        }
         if (err)
             g_propagate_error(error, err);
         else
@@ -92,18 +83,26 @@ static JsonNode* perform_token_exchange(const gchar* code, const gchar* code_ver
         g_object_unref(parser);
         g_object_unref(msg);
         g_object_unref(session);
+        g_free(response);
         return NULL;
     }
 
     JsonNode* root = json_parser_get_root(parser);
+    g_free(response);
     g_object_unref(parser);
     g_object_unref(msg);
     g_object_unref(session);
     return root;
 }
 
-static void save_token(JsonNode* token_response)
+static void save_token(JsonNode* token_response, const gchar* db_path)
 {
+    JsonObject* obj = json_node_get_object(token_response);
+    const gchar* access_token = json_object_get_string_member(obj, "access_token");
+    gint expires_in = json_object_get_int_member(obj, "expires_in");
+    const gchar* scope = json_object_get_string_member(obj, "scope");
+    const gchar* token_type = json_object_get_string_member(obj, "token_type");
+
     sqlite3* db = NULL;
     if (sqlite3_open(db_path, &db) != SQLITE_OK)
     {
@@ -125,10 +124,10 @@ static void save_token(JsonNode* token_response)
         return;
     }
 
-    sqlite3_bind_text(stmt, 1, access_token, -1, SQLITE_STATIC);
+    sqlite3_bind_text(stmt, 1, access_token, -1, SQLITE_TRANSIENT);
     sqlite3_bind_int(stmt, 2, expires_in);
-    sqlite3_bind_text(stmt, 3, scope, -1, SQLITE_STATIC);
-    sqlite3_bind_text(stmt, 4, token_type, -1, SQLITE_STATIC);
+    sqlite3_bind_text(stmt, 3, scope, -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 4, token_type, -1, SQLITE_TRANSIENT);
 
     if (sqlite3_step(stmt) != SQLITE_DONE)
     {
@@ -142,6 +141,7 @@ static void save_token(JsonNode* token_response)
 static void on_oauth_message(SoupWebsocketConnection* connection, SoupWebsocketDataType type,
                              GBytes* message, gpointer user_data)
 {
+    const gchar* db_path = (const gchar*)user_data;
     if (type != SOUP_WEBSOCKET_DATA_TEXT) return;
     gsize len = 0;
     const guint8* data = g_bytes_get_data(message, &len);
@@ -171,17 +171,19 @@ static void on_oauth_message(SoupWebsocketConnection* connection, SoupWebsocketD
     {
         const gchar* code = json_object_get_string_member(obj, "code");
         const gchar* verifier = json_object_get_string_member(obj, "code_verifier");
+        const gchar* client_id = json_object_get_string_member(obj, "client_id");
         g_printerr("on_oauth_message: exchange_code: code=%s verifier=%s\n", code, verifier);
 
         GError* xerr = NULL;
-        const gchar* client_id = json_object_get_string_member(obj, "client_id");
         JsonNode* resp = perform_token_exchange(code, verifier, client_id, &xerr);
         if (resp)
         {
-            save_token(resp);
+            save_token(resp, db_path);
 
+            gchar* json_str = json_to_string(resp, FALSE);
             gchar* reply =
-                g_strdup_printf("{\"type\":\"exchange_result\",\"ok\":true,\"data\":%s}", resp);
+                g_strdup_printf("{\"type\":\"exchange_result\",\"ok\":true,\"data\":%s}", json_str);
+            g_free(json_str);
             g_printerr("on_oauth_message: sending success reply: %s\n", reply);
             soup_websocket_connection_send_text(connection, reply);
             g_free(reply);
@@ -207,11 +209,9 @@ static void ws_oauth_exchange_handler(SoupServer* server, SoupServerMessage* msg
 {
     g_printerr("OAuth websocket handler: new connection on %s\n", path);
 
-    // Connect signals for incoming messages and closed event
-    g_signal_connect(connection, "message", G_CALLBACK(on_oauth_message), NULL);
+    g_signal_connect(connection, "message", G_CALLBACK(on_oauth_message), (gpointer)user_data);
     g_signal_connect(connection, "closed", G_CALLBACK(oauth_conn_closed), NULL);
 
-    // Send initial welcome
     soup_websocket_connection_send_text(connection, "{\"type\":\"welcome\"}");
 
     g_object_ref(connection);
@@ -221,7 +221,8 @@ static void oauth_conn_closed(SoupWebsocketConnection* connection, gpointer user
 {
     gint code = soup_websocket_connection_get_close_code(connection);
     g_printerr("OAuth websocket closed, code=%d\n", code);
-    if (code != SOUP_WEBSOCKET_CLOSE_NORMAL) g_object_unref(connection);
+    if (code != SOUP_WEBSOCKET_CLOSE_NORMAL)
+        g_object_unref(connection);
 }
 
 static void ensure_database(const gchar* db_path)
@@ -258,19 +259,19 @@ int main()
 {
     gchar* app_dir = g_build_filename(g_get_user_data_dir(), "trader", NULL);
     gchar* db_path = g_build_filename(app_dir, "profile.db", NULL);
-    if (!G_IS_FILE(g_file_new_for_path(app_dir)))
+
+    if (g_mkdir_with_parents(app_dir, 0755) == -1)
     {
-        if (g_mkdir_with_parents(app_dir, 0755) == -1)
-        {
-            g_printerr("Failed to create data directory: %s\n", strerror(errno));
-            return 1;
-        }
+        g_printerr("Failed to create data directory: %s\n", strerror(errno));
+        return 1;
     }
+
     ensure_database(db_path);
+
     SoupServer* server = soup_server_new(NULL, NULL);
     soup_server_add_websocket_handler(server, "/events", NULL, NULL, ws_events_handler, NULL, NULL);
     soup_server_add_websocket_handler(server, "/trader/oauth", NULL, NULL,
-                                      ws_oauth_exchange_handler, NULL, NULL);
+                                      ws_oauth_exchange_handler, (gpointer)db_path, NULL);
 
     GError* error = NULL;
     if (!soup_server_listen_all(server, 5000, SOUP_SERVER_LISTEN_IPV4_ONLY, &error))
@@ -279,12 +280,14 @@ int main()
         return 1;
     }
 
-    g_print("Trader server running port 5000\n");
+    g_print("Trader server running on port 5000\n");
 
     GMainLoop* loop = g_main_loop_new(NULL, FALSE);
     g_main_loop_run(loop);
 
     g_main_loop_unref(loop);
     g_object_unref(server);
+    g_free(app_dir);
+    g_free(db_path);
     return 0;
 }
