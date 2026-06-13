@@ -84,6 +84,19 @@ async function startOauth() {
 
 async function exchangeCode(code, codeVerifier, wsAuth) {
     return new Promise((resolve, reject) => {
+        let settled = false;
+
+        const safeResolve = (val) => {
+            if (settled) return;
+            settled = true;
+            try { resolve(val); } catch (e) { /* noop */ }
+        };
+
+        const safeReject = (err) => {
+            if (settled) return;
+            settled = true;
+            try { reject(err); } catch (e) { /* noop */ }
+        };
 
         wsAuth.onopen = () => {
             // Send token exchange request
@@ -98,23 +111,24 @@ async function exchangeCode(code, codeVerifier, wsAuth) {
             try {
                 const data = JSON.parse(event.data);
                 if (data.type === "exchange_result") {
-                    wsAuth.close();
-                    resolve(data); // { ok: true, token: "...", ... }
+                    // Mark settled before closing to avoid onclose race
+                    safeResolve(data); // { ok: true, token: "...", ... }
+                    try { wsAuth.close(1000); } catch (e) { /* ignore */ }
                 }
             } catch (err) {
-                wsAuth.close();
-                reject(err);
+                try { wsAuth.close(); } catch (e) { /* ignore */ }
+                safeReject(err);
             }
         };
 
         wsAuth.onerror = (err) => {
-            reject(err);
+            safeReject(err || new Error('WebSocket error'));
         };
 
         wsAuth.onclose = (evt) => {
             // If closed before resolving, reject
-            if (evt.code !== 1000) {
-                reject(new Error("WebSocket closed unexpectedly"));
+            if (!settled) {
+                safeReject(new Error("WebSocket closed unexpectedly"));
             }
         };
     });
