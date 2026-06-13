@@ -1,6 +1,9 @@
-all: compile run
+all: pull compile run
 
 IP := $(shell ip -4 addr show wlan0 | awk '/inet / {print $$2}' | cut -d/ -f1)
+
+pull:
+	git pull
 
 cert:
 	openssl req -x509 -new -nodes -keyout rootCA.key -sha256 -days 365 \
