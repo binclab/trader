@@ -126,13 +126,31 @@ static void on_oauth_message(SoupWebsocketConnection* connection, SoupWebsocketD
     g_free(text);
 }
 
+static gboolean send_ping(gpointer data)
+{
+    SoupWebsocketConnection* conn = data;
+    if (soup_websocket_connection_get_state(conn) == SOUP_WEBSOCKET_STATE_OPEN)
+    {
+        soup_websocket_connection_send_text(conn, "{\"type\":\"ping\"}");
+        return TRUE;
+    }
+    return FALSE;
+}
+
 static void ws_oauth_exchange_handler(SoupServer* server, SoupServerMessage* msg, const char* path,
                                       SoupWebsocketConnection* connection, gpointer user_data)
 {
     g_printerr("OAuth websocket handler: new connection on %s\n", path);
+
+    // Connect signals for incoming messages and closed event
     g_signal_connect(connection, "message", G_CALLBACK(on_oauth_message), NULL);
     g_signal_connect(connection, "closed", G_CALLBACK(oauth_conn_closed), NULL);
+
+    // Send initial welcome
     soup_websocket_connection_send_text(connection, "{\"type\":\"welcome\"}");
+
+    // Schedule periodic ping every 30 seconds
+    g_timeout_add_seconds(30, send_ping, connection);
 }
 
 static void oauth_conn_closed(SoupWebsocketConnection* connection, gpointer user_data)
