@@ -1,5 +1,3 @@
-import { showDashboard } from "./dashboard";
-
 if (localStorage.getItem("logged_in") === "1") {
     showDashboard();
 }
@@ -15,7 +13,7 @@ if (params.get("client_id") && params.get("server")) {
 
     const server = localStorage.getItem("server");
     const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
-    const wsAuth = new WebSocket(`${scheme}://${server}/trader/oauth`);
+    const wsAuth = new WebSocket(`${scheme}://${server}/trader/api`);
 
     (async () => {
         const code = params.get("code");
@@ -141,5 +139,5 @@ async function exchangeCode(code, codeVerifier, wsAuth) {
 function showDashboard() {
     //window.history.replaceState({}, "", location.pathname);
     const server = localStorage.getItem("server");
-    window.location.href = `https://${server}/trader`;
+    window.location.href = `https://${server}/trader/api`;
 }
