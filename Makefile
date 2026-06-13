@@ -24,3 +24,8 @@ compile:
 
 run:
 	./.build/server
+
+update:
+	git add .
+	git commit -am "update"
+	git push
