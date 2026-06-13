@@ -29,8 +29,8 @@ static void on_events_message(SoupWebsocketConnection* connection, SoupWebsocket
 
 static gchar* perform_token_exchange(const gchar* code, const gchar* code_verifier, GError** error)
 {
+    g_printerr("perform_token_exchange: code=%s verifier=%s\n", code, code_verifier);
     // Instead of calling the real endpoint, just return dummy JSON
-    return g_strdup("{\"access_token\":\"fake-token\",\"token_type\":\"Bearer\"}");
     SoupSession* session = soup_session_new();
     SoupMessage* msg = soup_message_new("POST", "https://auth.deriv.com/oauth2/token");
 
@@ -54,6 +54,7 @@ static gchar* perform_token_exchange(const gchar* code, const gchar* code_verifi
         gsize rlen = 0;
         const guint8* rdata = g_bytes_get_data(resp, &rlen);
         response = g_strndup((const char*)rdata, rlen);
+        g_printerr("perform_token_exchange: received response: %s\n", response);
         g_bytes_unref(resp);
     }
     else
@@ -74,11 +75,11 @@ static void on_oauth_message(SoupWebsocketConnection* connection, SoupWebsocketD
                              GBytes* message, gpointer user_data)
 {
     if (type != SOUP_WEBSOCKET_DATA_TEXT) return;
-    g_printerr("on_oauth_message fired, type=%d\n", type);
-
     gsize len = 0;
     const guint8* data = g_bytes_get_data(message, &len);
     gchar* text = g_strndup((const char*)data, len);
+    g_printerr("on_oauth_message fired, type=%d\n", type);
+    g_printerr("on_oauth_message: received text: %s\n", text);
 
     JsonParser* parser = json_parser_new();
     GError* err = NULL;
@@ -97,10 +98,13 @@ static void on_oauth_message(SoupWebsocketConnection* connection, SoupWebsocketD
 
     JsonObject* obj = json_node_get_object(json_parser_get_root(parser));
     const gchar* action = json_object_get_string_member(obj, "action");
+    g_printerr("on_oauth_message: parsed action=%s\n", action);
     if (g_strcmp0(action, "exchange_code") == 0)
     {
         const gchar* code = json_object_get_string_member(obj, "code");
         const gchar* verifier = json_object_get_string_member(obj, "code_verifier");
+        g_printerr("on_oauth_message: exchange_code: code=%s verifier=%s\n", code,
+                   verifier);
 
         GError* xerr = NULL;
         gchar* resp = perform_token_exchange(code, verifier, &xerr);
@@ -108,6 +112,7 @@ static void on_oauth_message(SoupWebsocketConnection* connection, SoupWebsocketD
         {
             gchar* reply =
                 g_strdup_printf("{\"type\":\"exchange_result\",\"ok\":true,\"data\":%s}", resp);
+            g_printerr("on_oauth_message: sending success reply: %s\n", reply);
             soup_websocket_connection_send_text(connection, reply);
             g_free(reply);
             g_free(resp);
@@ -117,6 +122,7 @@ static void on_oauth_message(SoupWebsocketConnection* connection, SoupWebsocketD
             const gchar* msg = xerr ? xerr->message : "Token exchange failed";
             gchar* reply = g_strdup_printf(
                 "{\"type\":\"exchange_result\",\"ok\":false,\"error\":\"%s\"}", msg);
+            g_printerr("on_oauth_message: sending error reply: %s\n", reply);
             soup_websocket_connection_send_text(connection, reply);
             g_free(reply);
             g_clear_error(&xerr);
@@ -125,17 +131,6 @@ static void on_oauth_message(SoupWebsocketConnection* connection, SoupWebsocketD
 
     g_object_unref(parser);
     g_free(text);
-}
-
-static gboolean send_ping(gpointer data)
-{
-    SoupWebsocketConnection* conn = data;
-    if (soup_websocket_connection_get_state(conn) == SOUP_WEBSOCKET_STATE_OPEN)
-    {
-        soup_websocket_connection_send_text(conn, "{\"type\":\"ping\"}");
-        return TRUE;
-    }
-    return FALSE;
 }
 
 static void ws_oauth_exchange_handler(SoupServer* server, SoupServerMessage* msg, const char* path,
