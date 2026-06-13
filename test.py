@@ -20,7 +20,7 @@ def on_open(ws):
 url = "wss://tazi.binclab.com/trader/oauth"
 
 if os.path.dirname(os.path.abspath(__file__)) == "/home/root/trader":
-    url = "wss://localhost:5000/trader/oauth"
+    url = "wss://127.0.0.1:5000/trader/oauth"
 
 ws = websocket.WebSocketApp(
     url,
