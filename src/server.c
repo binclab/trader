@@ -412,7 +412,8 @@ int main()
     }
 
     SoupServer* server = soup_server_new(NULL, NULL);
-    soup_server_add_websocket_handler(server, "/trader", NULL, NULL, socket_handler, &ctx, NULL);
+    soup_server_add_websocket_handler(server, "/trader/api", NULL, NULL, socket_handler, &ctx,
+                                      NULL);
 
     GError* error = NULL;
     if (!soup_server_listen_all(server, 5000, SOUP_SERVER_LISTEN_IPV4_ONLY, &error))
