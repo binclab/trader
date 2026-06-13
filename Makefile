@@ -7,10 +7,10 @@ cert:
 	  -out rootCA.crt -subj "/CN=Local Root CA"
 	certutil -d sql:$HOME/.pki/nssdb -A -t "CT,C,C" -n "LocalRootCA" -i rootCA.crt
 	openssl req -new -nodes -out server.csr -keyout server.key \
-	  -subj "/CN=tazi.local"
+	  -subj "/CN=tazi.binclab.com"
 	openssl x509 -req -in server.csr -CA rootCA.crt -CAkey rootCA.key \
 	  -CAcreateserial -out server.crt -days 365 \
-	  -extfile <(printf "subjectAltName=DNS:tazi.local")
+	  -extfile <(printf "subjectAltName=DNS:tazi.binclab.com")
 
 
 configure:
