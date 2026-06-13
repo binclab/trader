@@ -29,6 +29,8 @@ static void on_events_message(SoupWebsocketConnection* connection, SoupWebsocket
 
 static gchar* perform_token_exchange(const gchar* code, const gchar* code_verifier, GError** error)
 {
+    // Instead of calling the real endpoint, just return dummy JSON
+    return g_strdup("{\"access_token\":\"fake-token\",\"token_type\":\"Bearer\"}");
     SoupSession* session = soup_session_new();
     SoupMessage* msg = soup_message_new("POST", "https://auth.deriv.com/oauth2/token");
 
