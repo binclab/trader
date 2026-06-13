@@ -48,7 +48,6 @@ static JsonObject* perform_token_exchange(const gchar* code, const gchar* code_v
         body = g_strdup_printf(
             "grant_type=authorization_code&code_verifier=%s&code=%s&redirect_uri=%s", code_verifier,
             code, redirect);
-    g_printerr("perform_token_exchange: request body: %s\n", body);
 
     GBytes* bytes = g_bytes_new(body, strlen(body));
     soup_message_set_request_body_from_bytes(msg, "application/x-www-form-urlencoded", bytes);
@@ -160,7 +159,6 @@ static void on_oauth_message(SoupWebsocketConnection* connection, SoupWebsocketD
     gsize len = 0;
     const guint8* data = g_bytes_get_data(message, &len);
     gchar* text = g_strndup((const char*)data, len);
-    g_printerr("on_oauth_message: received text: %s\n", text);
 
     JsonParser* parser = json_parser_new();
     GError* err = NULL;
@@ -187,23 +185,21 @@ static void on_oauth_message(SoupWebsocketConnection* connection, SoupWebsocketD
 
         GError* xerr = NULL;
         JsonObject* resp_obj = perform_token_exchange(code, verifier, client_id, &xerr);
-if (resp_obj)
-{
-    save_token(resp_obj, db_path);
+        if (resp_obj)
+        {
+            save_token(resp_obj, db_path);
 
-    // Wrap the JsonObject back into a node for serialization
-    JsonNode* node = json_node_new(JSON_NODE_OBJECT);
-    json_node_set_object(node, resp_obj);
+            JsonNode* node = json_node_new(JSON_NODE_OBJECT);
+            json_node_set_object(node, resp_obj);
 
-    gchar* json_str = json_to_string(node, FALSE);
-    gchar* reply =
-        g_strdup_printf("{\"type\":\"exchange_result\",\"ok\":true,\"data\":%s}", json_str);
-    g_free(json_str);
-    soup_websocket_connection_send_text(connection, reply);
-    g_free(reply);
+            gchar* json_str = json_to_string(node, FALSE);
+            gchar* reply =
+                g_strdup_printf("{\"type\":\"exchange_result\",\"ok\":true,\"data\":%s}", json_str);
+            g_free(json_str);
+            soup_websocket_connection_send_text(connection, reply);
+            g_free(reply);
 
-    json_node_free(node);
-}
+            json_node_free(node);
         }
         else
         {
