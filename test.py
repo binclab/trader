@@ -15,7 +15,7 @@ def on_open(ws):
     ws.send('{"action":"exchange_code","code":"test","code_verifier":"test"}')
 
 ws = websocket.WebSocketApp(
-    "wss://tazi.binclab.com/oauth/exchange",
+    "wss://192.168.129.231/trader/oauth",
     on_message=on_message,
     on_error=on_error,
     on_close=on_close
