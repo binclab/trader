@@ -11,7 +11,8 @@ if (params.get("client_id") && params.get("server")) {
 if (params.get("code") && params.get("scope") && params.get("state")) {
 
     const server = localStorage.getItem("server");
-    const wsAuth = new WebSocket(`wss://${server}/trader/oauth`);
+    const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
+    const wsAuth = new WebSocket(`${scheme}://${server}/trader/oauth`);
 
     (async () => {
         const code = params.get("code");
