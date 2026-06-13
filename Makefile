@@ -1,4 +1,4 @@
-all: compile
+all: compile run
 
 IP := $(shell ip -4 addr show wlan0 | awk '/inet / {print $$2}' | cut -d/ -f1)
 
@@ -18,3 +18,6 @@ configure:
 
 compile:
 	meson compile -C .build
+
+run:
+	./.build/server
