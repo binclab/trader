@@ -142,7 +142,7 @@ int main()
 {
     SoupServer* server = soup_server_new(NULL, NULL);
     soup_server_add_websocket_handler(server, "/events", NULL, NULL, ws_events_handler, NULL, NULL);
-    soup_server_add_websocket_handler(server, "/oauth/exchange", NULL, NULL,
+    soup_server_add_websocket_handler(server, "/trader/oauth", NULL, NULL,
                                       ws_oauth_exchange_handler, NULL, NULL);
 
     GError* error = NULL;
@@ -152,7 +152,7 @@ int main()
         return 1;
     }
 
-    g_print("Trader server running on ws://0.0.0.0:5000\n");
+    g_print("Trader server running port 5000\n");
 
     GMainLoop* loop = g_main_loop_new(NULL, FALSE);
     g_main_loop_run(loop);
