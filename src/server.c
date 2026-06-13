@@ -158,7 +158,7 @@ static void oauth_conn_closed(SoupWebsocketConnection* connection, gpointer user
 {
     gint code = soup_websocket_connection_get_close_code(connection);
     g_printerr("OAuth websocket closed, code=%d\n", code);
-    g_object_unref(connection);
+    if(code != 1000) g_object_unref(connection);
 }
 
 int main()
