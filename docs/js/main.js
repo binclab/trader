@@ -7,9 +7,7 @@ if (params.get("client_id") && params.get("server")) {
     localStorage.setItem("server", params.get("server"));
     console.log("Client ID and Server stored. Starting OAuth flow...");
     startOauth();
-}
-
-if (params.get("code") && params.get("scope") && params.get("state")) {
+} else if (params.get("code") && params.get("scope") && params.get("state")) {
 
     const server = localStorage.getItem("server");
     const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
@@ -41,6 +39,8 @@ if (params.get("code") && params.get("scope") && params.get("state")) {
             document.body.innerHTML = "<h2>Token exchange failed.</h2>";
         }
     })();
+} else if (localStorage.getItem("logged_in") === "1") {
+    showDashboard();
 }
 
 async function startOauth() {
