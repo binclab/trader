@@ -20,7 +20,7 @@ def on_open(ws):
 url = "wss://tazi.binclab.com/trader/oauth"
 
 if os.geteuid() == 0:
-    url = "wss://127.0.0.1:5000/trader/oauth"
+    url = "ws://127.0.0.1:5000/trader/oauth"
 
 ws = websocket.WebSocketApp(
     url,
