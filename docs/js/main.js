@@ -1,4 +1,5 @@
-// main.js
+import { showDashboard } from "./dashboard.js";
+
 const params = new URLSearchParams(window.location.search);
 
 if (params.get("client_id") && params.get("server")) {
