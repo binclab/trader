@@ -10,8 +10,9 @@ static void on_events_message(SoupWebsocketConnection* connection, SoupWebsocket
                               GBytes* message, gpointer user_data);
 static void on_oauth_message(SoupWebsocketConnection* connection, SoupWebsocketDataType type,
                              GBytes* message, gpointer user_data);
+static void oauth_conn_closed(SoupWebsocketConnection* connection, gpointer user_data);
 
-// Shared state structure to avoid redundant database opening and session reallocation
+// Shared application state structure
 typedef struct {
     sqlite3* db;
     SoupSession* session;
@@ -37,6 +38,7 @@ static void on_events_message(SoupWebsocketConnection* connection, SoupWebsocket
 static JsonObject* perform_token_exchange(SoupSession* session, const gchar* code, const gchar* code_verifier,
                                           const gchar* client_id, GError** error)
 {
+    g_printerr("perform_token_exchange: code=%s verifier=%s\n", code, code_verifier);
     SoupMessage* msg = soup_message_new("POST", "https://auth.deriv.com/oauth2/token");
     const char* redirect = "https://trader.binclab.com/index";
     gchar* body;
@@ -51,7 +53,7 @@ static JsonObject* perform_token_exchange(SoupSession* session, const gchar* cod
             code_verifier, code, redirect);
     }
 
-    GBytes* bytes = g_bytes_new_take(body, strlen(body)); // Takes ownership of body, eliminating 1 allocation copy
+    GBytes* bytes = g_bytes_new_take(body, strlen(body)); // Takes ownership of body, eliminating 1 copy
     soup_message_set_request_body_from_bytes(msg, "application/x-www-form-urlencoded", bytes);
     g_bytes_unref(bytes);
 
@@ -71,6 +73,7 @@ static JsonObject* perform_token_exchange(SoupSession* session, const gchar* cod
 
     gsize rlen = 0;
     const char* rdata = (const char*)g_bytes_get_data(resp, &rlen);
+    g_printerr("perform_token_exchange: status=%u response=%s\n", status, rdata);
 
     JsonParser* parser = json_parser_new();
     // Load parsed stream directly without performing a g_strndup clone string step first
@@ -124,7 +127,7 @@ static void save_token(sqlite3* db, JsonObject* obj)
         return;
     }
 
-    // SQLITE_STATIC avoids unnecessary internal memory copying of the fields inside SQLite
+    // SQLITE_STATIC avoids unnecessary internal memory copying inside SQLite
     sqlite3_bind_text(stmt, 1, access_token, -1, SQLITE_STATIC);
     sqlite3_bind_int(stmt, 2, expires_in);
     sqlite3_bind_text(stmt, 3, scope ? scope : "", -1, SQLITE_STATIC);
@@ -196,8 +199,24 @@ static void on_oauth_message(SoupWebsocketConnection* connection, SoupWebsocketD
 static void ws_oauth_exchange_handler(SoupServer* server, SoupServerMessage* msg, const char* path,
                                       SoupWebsocketConnection* connection, gpointer user_data)
 {
+    g_printerr("OAuth websocket handler: new connection on %s\n", path);
+
     g_signal_connect(connection, "message", G_CALLBACK(on_oauth_message), user_data);
+    g_signal_connect(connection, "closed", G_CALLBACK(oauth_conn_closed), NULL);
+
     soup_websocket_connection_send_text(connection, "{\"type\":\"welcome\"}");
+
+    // Manually hold a reference to keep the socket alive within the async handler event loop
+    g_object_ref(connection);
+}
+
+static void oauth_conn_closed(SoupWebsocketConnection* connection, gpointer user_data)
+{
+    gint code = soup_websocket_connection_get_close_code(connection);
+    g_printerr("OAuth websocket closed, code=%d\n", code);
+    
+    // Unconditional unref ensures we never leak connections on unexpected socket failures
+    g_object_unref(connection);
 }
 
 static sqlite3* ensure_and_get_database(const gchar* db_path)
@@ -272,7 +291,7 @@ int main()
     GMainLoop* loop = g_main_loop_new(NULL, FALSE);
     g_main_loop_run(loop);
 
-    // Clean up
+    // Structural Clean up
     g_main_loop_unref(loop);
     g_object_unref(server);
     g_object_unref(ctx.session);
