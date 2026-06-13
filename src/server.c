@@ -38,6 +38,7 @@ static gchar* perform_token_exchange(const gchar* code, const gchar* code_verifi
     gchar* body =
         g_strdup_printf("grant_type=authorization_code&code=%s&redirect_uri=%s&code_verifier=%s",
                         code, redirect, code_verifier);
+    g_printerr("perform_token_exchange: request body: %s\n", body);
 
     GBytes* bytes = g_bytes_new(body, strlen(body));
     soup_message_set_request_body_from_bytes(msg, "application/x-www-form-urlencoded", bytes);
@@ -49,16 +50,25 @@ static gchar* perform_token_exchange(const gchar* code, const gchar* code_verifi
 
     gchar* response = NULL;
     guint status = soup_message_get_status(msg);
-    if (resp != NULL && status == 200)
+    if (resp != NULL)
     {
         gsize rlen = 0;
         const guint8* rdata = g_bytes_get_data(resp, &rlen);
         response = g_strndup((const char*)rdata, rlen);
-        g_printerr("perform_token_exchange: received response: %s\n", response);
+        g_printerr("perform_token_exchange: status=%u response=%s\n", status, response);
         g_bytes_unref(resp);
     }
     else
     {
+        if (resp != NULL)
+        {
+            gsize rlen = 0;
+            const guint8* rdata = g_bytes_get_data(resp, &rlen);
+            gchar* errbody = g_strndup((const char*)rdata, rlen);
+            g_printerr("perform_token_exchange: non-200 status=%u response=%s\n", status, errbody);
+            g_free(errbody);
+            g_bytes_unref(resp);
+        }
         if (err)
             g_propagate_error(error, err);
         else
