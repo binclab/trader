@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import os
 import websocket
 import ssl
 
@@ -16,8 +17,13 @@ def on_open(ws):
     print("Connection opened")
     ws.send('{"action":"exchange_code","code":"test","code_verifier":"test"}')
 
+url = "wss://tazi.binclab.com/trader/oauth"
+
+if os.path.dirname(os.path.abspath(__file__)) == "/home/root/trader":
+    url = "wss://localhost:5000/trader/oauth"
+
 ws = websocket.WebSocketApp(
-    "ws://tazi.binclab.com:5000/trader/oauth",
+    url,
     on_message=on_message,
     on_error=on_error,
     on_close=on_close
