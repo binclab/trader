@@ -187,16 +187,23 @@ static void on_oauth_message(SoupWebsocketConnection* connection, SoupWebsocketD
 
         GError* xerr = NULL;
         JsonObject* resp_obj = perform_token_exchange(code, verifier, client_id, &xerr);
-        if (resp_obj)
-        {
-            save_token(resp_obj, db_path);
+if (resp_obj)
+{
+    save_token(resp_obj, db_path);
 
-            gchar* json_str = json_to_string(json_object_get_root(resp_obj), FALSE);
-            gchar* reply =
-                g_strdup_printf("{\"type\":\"exchange_result\",\"ok\":true,\"data\":%s}", json_str);
-            g_free(json_str);
-            soup_websocket_connection_send_text(connection, reply);
-            g_free(reply);
+    // Wrap the JsonObject back into a node for serialization
+    JsonNode* node = json_node_new(JSON_NODE_OBJECT);
+    json_node_set_object(node, resp_obj);
+
+    gchar* json_str = json_to_string(node, FALSE);
+    gchar* reply =
+        g_strdup_printf("{\"type\":\"exchange_result\",\"ok\":true,\"data\":%s}", json_str);
+    g_free(json_str);
+    soup_websocket_connection_send_text(connection, reply);
+    g_free(reply);
+
+    json_node_free(node);
+}
         }
         else
         {
