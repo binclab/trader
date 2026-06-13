@@ -291,9 +291,11 @@ static gboolean token_is_valid(sqlite3* database)
 
     if (sqlite3_prepare_v2(database, sql, -1, &stmt, NULL) != SQLITE_OK)
     {
-        g_printerr("Failed to prepare statement: %s\n", sqlite3_errmsg(database));
+        g_printerr("Failed to prepare validity statement: %s\n", sqlite3_errmsg(database));
         return FALSE;
     }
+
+    gboolean valid = FALSE;
 
     if (sqlite3_step(stmt) == SQLITE_ROW)
     {
@@ -302,24 +304,27 @@ static gboolean token_is_valid(sqlite3* database)
         int created_at = sqlite3_column_int(stmt, 2);
 
         int now = (int)time(NULL);
+
         if (created_at + expires_in <= now)
         {
             g_printerr("Token expired, deleting from database.\n");
             sqlite3_exec(database, "DELETE FROM token WHERE id = 1;", NULL, NULL, NULL);
+            valid = FALSE;
         }
         else
         {
             g_printerr("Existing token is still valid.\n");
+            valid = TRUE;
         }
     }
     else
     {
         g_printerr("No existing token found in database.\n");
-        return FALSE;
+        valid = FALSE;
     }
 
     sqlite3_finalize(stmt);
-    return TRUE;
+    return valid;
 }
 
 static void socket_handler(SoupServer* server, SoupServerMessage* msg, const char* path,
