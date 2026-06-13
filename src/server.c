@@ -73,6 +73,7 @@ static gchar* perform_token_exchange(const gchar* code, const gchar* code_verifi
 static void on_oauth_message(SoupWebsocketConnection* connection, SoupWebsocketDataType type,
                              GBytes* message, gpointer user_data)
 {
+    g_printerr("on_oauth_message fired, type=%d\n", type);
     if (type != SOUP_WEBSOCKET_DATA_TEXT) return;
     gsize len = 0;
     const guint8* data = g_bytes_get_data(message, &len);
