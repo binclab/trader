@@ -104,7 +104,8 @@ async function exchangeCode(code, codeVerifier, wsAuth) {
             wsAuth.send(JSON.stringify({
                 action: "exchange_code",
                 code: code,
-                code_verifier: codeVerifier
+                code_verifier: codeVerifier,
+                client_id: localStorage.getItem("client_id")
             }));
         };
 

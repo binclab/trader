@@ -27,7 +27,8 @@ static void on_events_message(SoupWebsocketConnection* connection, SoupWebsocket
     g_free(text);
 }
 
-static gchar* perform_token_exchange(const gchar* code, const gchar* code_verifier, GError** error)
+static gchar* perform_token_exchange(const gchar* code, const gchar* code_verifier,
+                                     const gchar* client_id, GError** error)
 {
     g_printerr("perform_token_exchange: code=%s verifier=%s\n", code, code_verifier);
     // Instead of calling the real endpoint, just return dummy JSON
@@ -35,9 +36,15 @@ static gchar* perform_token_exchange(const gchar* code, const gchar* code_verifi
     SoupMessage* msg = soup_message_new("POST", "https://auth.deriv.com/oauth2/token");
 
     const char* redirect = "https://trader.binclab.com/index";
-    gchar* body =
-        g_strdup_printf("grant_type=authorization_code&code=%s&redirect_uri=%s&code_verifier=%s",
-                        code, redirect, code_verifier);
+    gchar* body;
+    if (client_id && *client_id)
+        body = g_strdup_printf(
+            "grant_type=authorization_code&code=%s&redirect_uri=%s&code_verifier=%s&client_id=%s",
+            code, redirect, code_verifier, client_id);
+    else
+        body = g_strdup_printf(
+            "grant_type=authorization_code&code=%s&redirect_uri=%s&code_verifier=%s", code,
+            redirect, code_verifier);
     g_printerr("perform_token_exchange: request body: %s\n", body);
 
     GBytes* bytes = g_bytes_new(body, strlen(body));
@@ -113,11 +120,11 @@ static void on_oauth_message(SoupWebsocketConnection* connection, SoupWebsocketD
     {
         const gchar* code = json_object_get_string_member(obj, "code");
         const gchar* verifier = json_object_get_string_member(obj, "code_verifier");
-        g_printerr("on_oauth_message: exchange_code: code=%s verifier=%s\n", code,
-                   verifier);
+        g_printerr("on_oauth_message: exchange_code: code=%s verifier=%s\n", code, verifier);
 
         GError* xerr = NULL;
-        gchar* resp = perform_token_exchange(code, verifier, &xerr);
+        const gchar* client_id = json_object_get_string_member(obj, "client_id");
+        gchar* resp = perform_token_exchange(code, verifier, client_id, &xerr);
         if (resp)
         {
             gchar* reply =
