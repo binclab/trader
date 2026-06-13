@@ -31,8 +31,8 @@ static void on_events_message(SoupWebsocketConnection* connection, SoupWebsocket
     g_free(text);
 }
 
-static JsonNode* perform_token_exchange(const gchar* code, const gchar* code_verifier,
-                                        const gchar* client_id, GError** error)
+static JsonObject* perform_token_exchange(const gchar* code, const gchar* code_verifier,
+                                          const gchar* client_id, GError** error)
 {
     g_printerr("perform_token_exchange: code=%s verifier=%s\n", code, code_verifier);
     SoupSession* session = soup_session_new();
@@ -88,16 +88,30 @@ static JsonNode* perform_token_exchange(const gchar* code, const gchar* code_ver
     }
 
     JsonNode* root = json_parser_get_root(parser);
+    if (!JSON_NODE_HOLDS_OBJECT(root)) {
+        g_printerr("Token exchange response root is not an object!\n");
+        g_object_unref(parser);
+        g_object_unref(msg);
+        g_object_unref(session);
+        g_free(response);
+        return NULL;
+    }
+
+    JsonObject* obj = json_node_get_object(root);
     g_free(response);
     g_object_unref(parser);
     g_object_unref(msg);
     g_object_unref(session);
-    return root;
+    return obj;
 }
 
-static void save_token(JsonNode* token_response, const gchar* db_path)
+static void save_token(JsonObject* obj, const gchar* db_path)
 {
-    JsonObject* obj = json_node_get_object(token_response);
+    if (!json_object_has_member(obj, "access_token")) {
+        g_printerr("No access_token in JSON, not saving.\n");
+        return;
+    }
+
     const gchar* access_token = json_object_get_string_member(obj, "access_token");
     gint expires_in = json_object_get_int_member(obj, "expires_in");
     const gchar* scope = json_object_get_string_member(obj, "scope");
@@ -126,8 +140,8 @@ static void save_token(JsonNode* token_response, const gchar* db_path)
 
     sqlite3_bind_text(stmt, 1, access_token, -1, SQLITE_TRANSIENT);
     sqlite3_bind_int(stmt, 2, expires_in);
-    sqlite3_bind_text(stmt, 3, scope, -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt, 4, token_type, -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 3, scope ? scope : "", -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 4, token_type ? token_type : "", -1, SQLITE_TRANSIENT);
 
     if (sqlite3_step(stmt) != SQLITE_DONE)
     {
@@ -146,7 +160,6 @@ static void on_oauth_message(SoupWebsocketConnection* connection, SoupWebsocketD
     gsize len = 0;
     const guint8* data = g_bytes_get_data(message, &len);
     gchar* text = g_strndup((const char*)data, len);
-    g_printerr("on_oauth_message fired, type=%d\n", type);
     g_printerr("on_oauth_message: received text: %s\n", text);
 
     JsonParser* parser = json_parser_new();
@@ -166,25 +179,22 @@ static void on_oauth_message(SoupWebsocketConnection* connection, SoupWebsocketD
 
     JsonObject* obj = json_node_get_object(json_parser_get_root(parser));
     const gchar* action = json_object_get_string_member(obj, "action");
-    g_printerr("on_oauth_message: parsed action=%s\n", action);
     if (g_strcmp0(action, "exchange_code") == 0)
     {
         const gchar* code = json_object_get_string_member(obj, "code");
         const gchar* verifier = json_object_get_string_member(obj, "code_verifier");
         const gchar* client_id = json_object_get_string_member(obj, "client_id");
-        g_printerr("on_oauth_message: exchange_code: code=%s verifier=%s\n", code, verifier);
 
         GError* xerr = NULL;
-        JsonNode* resp = perform_token_exchange(code, verifier, client_id, &xerr);
-        if (resp)
+        JsonObject* resp_obj = perform_token_exchange(code, verifier, client_id, &xerr);
+        if (resp_obj)
         {
-            save_token(resp, db_path);
+            save_token(resp_obj, db_path);
 
-            gchar* json_str = json_to_string(resp, FALSE);
+            gchar* json_str = json_to_string(json_object_get_root(resp_obj), FALSE);
             gchar* reply =
                 g_strdup_printf("{\"type\":\"exchange_result\",\"ok\":true,\"data\":%s}", json_str);
             g_free(json_str);
-            g_printerr("on_oauth_message: sending success reply: %s\n", reply);
             soup_websocket_connection_send_text(connection, reply);
             g_free(reply);
         }
@@ -193,7 +203,6 @@ static void on_oauth_message(SoupWebsocketConnection* connection, SoupWebsocketD
             const gchar* msg = xerr ? xerr->message : "Token exchange failed";
             gchar* reply = g_strdup_printf(
                 "{\"type\":\"exchange_result\",\"ok\":false,\"error\":\"%s\"}", msg);
-            g_printerr("on_oauth_message: sending error reply: %s\n", reply);
             soup_websocket_connection_send_text(connection, reply);
             g_free(reply);
             g_clear_error(&xerr);
