@@ -13,13 +13,7 @@
 				"cwd": "${workspaceFolder}"
 			},
 			"problemMatcher": [
-				{
-					"base": "$gcc",
-					"fileLocation": [
-						"relative",
-						"${workspaceFolder}"
-					]
-				}
+				"$gcc"
 			],
 			"group": "none"
 		},
@@ -35,18 +29,12 @@
 				"cwd": "${workspaceFolder}"
 			},
 			"problemMatcher": [
-				{
-					"base": "$gcc",
-					"fileLocation": [
-						"relative",
-						"${workspaceFolder}/trader"
-					]
-				}
+				"$gcc"
 			],
 			"group": {
 				"kind": "build",
 				"isDefault": true
 			}
 		}
-	],
+	]
 }

@@ -20,12 +20,5 @@ executable(
     c_args: ['-fstack-protector'],
     link_args: ['-lm'],
     install: false,
-    build_by_default : false,
-)
-
-executable(
-  'server',
-  'src/server.c',
-  dependencies : [soupdep, sqlitedep, jsondep],
-  install : true
+    build_by_default : true,
 )
