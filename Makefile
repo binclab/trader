@@ -1,7 +1,5 @@
 all: pull compile run
 
-IP := $(shell ip -4 addr show wlan0 | awk '/inet / {print $$2}' | cut -d/ -f1)
-
 pull:
 	git pull
 
